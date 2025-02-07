@@ -45,6 +45,7 @@ class RelationManager(BasePlugin):
 
             with open(self.data_path, "w", encoding="utf-8") as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+            self.ap.logger.info("数据保存成功")  # 添加日志
         except Exception as e:
             self.ap.logger.error(f"数据保存失败: {str(e)}")
 
@@ -59,14 +60,40 @@ class RelationManager(BasePlugin):
             }
         return self.relation_data[user_id]
 
+    def update_score(self, user_id: str, delta: int, reason: str):
+        """更新关系分数并记录历史"""
+        relation = self.get_relation(user_id)
+        new_score = max(0, min(100, relation["score"] + delta))
+        actual_delta = new_score - relation["score"]
+
+        relation["score"] = new_score
+        relation["history"].append({
+            "timestamp": datetime.now().isoformat(),
+            "delta": actual_delta,
+            "reason": reason
+        })
+        relation["last_interaction"] = datetime.now().isoformat()
+
+        # 保留最近50条记录
+        relation["history"] = relation["history"][-50:]
+
+        self.ap.logger.info(f"用户 {user_id} 好感度变化：{actual_delta}，当前：{relation['score']}")  # 添加日志
+
     @handler(PersonNormalMessageReceived)
     async def handle_person_message(self, ctx: EventContext):
         """处理接收个人消息"""
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
+        # 更新最后互动时间
+        self.get_relation(user_id)  # 确保用户数据存在
+
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
+        else:
+            # 在这里可以根据消息内容更新好感度
+            self.update_score(user_id, 1, "用户发送消息")  # 示例：增加1分
+            await self.save_data()  # 保存数据
 
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
@@ -74,8 +101,15 @@ class RelationManager(BasePlugin):
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
+        # 更新最后互动时间
+        self.get_relation(user_id)  # 确保用户数据存在
+
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
+        else:
+            # 在这里可以根据消息内容更新好感度
+            self.update_score(user_id, 1, "用户发送群消息")  # 示例：增加1分
+            await self.save_data()  # 保存数据
 
     async def handle_query_command(self, ctx: EventContext, user_id: str):
         """处理查询好感度的命令"""
