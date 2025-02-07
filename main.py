@@ -15,16 +15,14 @@ from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageRec
 class RelationManager(BasePlugin):
     def __init__(self, host: APIHost):
         self.host = host
-        self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")  # 更新为相对路径
+        self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        self.reply_pattern = re.compile(r"好感度([+-]\d+)")  # 匹配AI回复中的好感度调整标记
+        self.reply_pattern = re.compile(r"好感度([+-]\d+)")
 
     async def initialize(self):
-        """加载关系数据"""
         await self.load_data()
 
     async def load_data(self):
-        """异步加载数据"""
         try:
             if self.data_path.exists():
                 with open(self.data_path, "r", encoding="utf-8") as f:
@@ -35,11 +33,10 @@ class RelationManager(BasePlugin):
             self.relation_data = {}
 
     async def save_data(self):
-        """保存数据（带版本控制）"""
         try:
             backup_path = self.data_path.with_suffix(f".bak_{datetime.now().strftime('%Y%m%d%H%M')}")
             if backup_path.exists():
-                backup_path.unlink()  # 删除旧的备份文件
+                backup_path.unlink()
 
             if self.data_path.exists():
                 self.data_path.rename(backup_path)
@@ -51,10 +48,9 @@ class RelationManager(BasePlugin):
             self.ap.logger.error(f"数据保存失败: {str(e)}")
 
     def get_relation(self, user_id: str) -> dict:
-        """获取或初始化用户关系数据"""
         if user_id not in self.relation_data:
             self.relation_data[user_id] = {
-                "score": 50,  # 初始分数
+                "score": 50,
                 "history": [],
                 "last_interaction": datetime.now().isoformat(),
                 "custom_note": ""
@@ -63,40 +59,34 @@ class RelationManager(BasePlugin):
 
     @handler(PersonNormalMessageReceived)
     async def handle_person_message(self, ctx: EventContext):
-        """处理接收个人消息"""
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-        # 检查 AI 的回复
         await self.process_ai_feedback(user_id, message)
 
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
-        """处理接收群消息"""
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-        # 检查 AI 的回复
         await self.process_ai_feedback(user_id, message)
 
     async def process_ai_feedback(self, user_id: str, message: str):
-        """处理AI的反馈，更新好感度"""
         match = self.reply_pattern.search(message)
         if match:
             delta = int(match.group(1))
             reason = "AI自动评估"
             self.update_score(user_id, delta, reason)
             self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
-            await self.save_data()  # 保存数据
+            await self.save_data()
 
     def update_score(self, user_id: str, delta: int, reason: str):
-        """更新关系分数并记录历史"""
         relation = self.get_relation(user_id)
         new_score = max(0, min(100, relation["score"] + delta))
         actual_delta = new_score - relation["score"]
@@ -109,11 +99,9 @@ class RelationManager(BasePlugin):
         })
         relation["last_interaction"] = datetime.now().isoformat()
 
-        # 保留最近50条记录
         relation["history"] = relation["history"][-50:]
 
     async def handle_query_command(self, ctx: EventContext, user_id: str):
-        """处理查询好感度的命令"""
         relation = self.get_relation(user_id)
 
         response = (
