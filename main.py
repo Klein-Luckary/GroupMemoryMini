@@ -21,7 +21,7 @@ class RelationManager(BasePlugin):
         self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        # 匹配AI回复中的好感度调整标记（支持多种格式）（可修改）
+        # 匹配AI回复中的评价值调整标记（支持多种格式）（可修改）
         self.pattern = re.compile(r"\评价值([+-]?\d+)\|评价值\s*[：:]\s*([+-]?\d+)")
 
     async def initialize(self):
