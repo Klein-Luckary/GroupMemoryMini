@@ -122,4 +122,4 @@ class RelationManager(BasePlugin):
             ctx.prevent_default()
 
     def __del__(self):
-    pass
+        pass
