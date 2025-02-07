@@ -12,8 +12,8 @@ from pkg.plugin.events import (
 
 @register(
     name="GroupMemoryMini",
-    description="智能关系管理系统",
-    version="3.1",
+    description="基于关系管理系统的轻量伪记忆系统",
+    version="0.2",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -22,7 +22,7 @@ class RelationManager(BasePlugin):
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
         # 匹配AI回复中的好感度调整标记（支持多种格式）（可修改）
-        self.pattern = re.compile(r"\[好感度([+-]?\d+)\]|好感度\s*[：:]\s*([+-]?\d+)")
+        self.pattern = re.compile(r"\评价值([+-]?\d+)\|评价值\s*[：:]\s*([+-]?\d+)")
 
     async def initialize(self):
         """异步初始化"""
@@ -132,7 +132,7 @@ class RelationManager(BasePlugin):
                     # 从回复内容中移除标记
                     cleaned_response = cleaned_response.replace(match[0] or match[1], "", 1)
                 except ValueError:
-                    self.ap.logger.warning(f"无效的好感度数值: {value}")
+                    self.ap.logger.warning(f"无效的评价值数值: {value}")
 
             if total_adjustment != 0:
                 # 更新用户数据
@@ -149,10 +149,10 @@ class RelationManager(BasePlugin):
                 relation["last_interaction"] = datetime.now().isoformat()
                 
                 await self.save_data()
-                self.ap.logger.info(f"用户 {user_id} 好感度变化: {actual_adjustment}, 当前: {new_score}")
+                self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_score}")
 
                 # 更新回复内容
-                ctx.event.response_text = cleaned_response.strip() or "[好感度已更新]"
+                ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
 
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
@@ -160,13 +160,13 @@ class RelationManager(BasePlugin):
         """处理查询请求"""
         event = ctx.event
         
-        if event.text_message.strip() == "/查看好感度":
+        if event.text_message.strip() == "/查看关系":
             user_id = str(event.sender_id)
             relation = self.get_relation(user_id)
             
             report = (
                 f"【关系状态】\n"
-                f"• 当前好感：{relation['score']}/100\n"
+                f"• 当前评价值：{relation['score']}/100\n"
                 f"• 历史调整：{len(relation['history'])}次\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
