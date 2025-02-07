@@ -8,7 +8,7 @@ from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageRec
 @register(
     name="GroupMemoryMini",
     description="智能关系管理系统",
-    version="2.0",
+    version="1.1",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -45,7 +45,6 @@ class RelationManager(BasePlugin):
 
             with open(self.data_path, "w", encoding="utf-8") as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
-            self.ap.logger.info("数据保存成功")  # 添加日志
         except Exception as e:
             self.ap.logger.error(f"数据保存失败: {str(e)}")
 
@@ -59,6 +58,39 @@ class RelationManager(BasePlugin):
                 "custom_note": ""
             }
         return self.relation_data[user_id]
+
+    @handler(PersonNormalMessageReceived)
+    async def handle_person_message(self, ctx: EventContext):
+        """处理接收个人消息"""
+        user_id = str(ctx.event.sender_id)
+        message = ctx.event.text_message
+
+        # 处理 AI 回复的好感度变化
+        await self.process_ai_response(ctx, user_id, message)
+
+        if message == "/查看好感度":
+            await self.handle_query_command(ctx, user_id)
+
+    @handler(GroupNormalMessageReceived)
+    async def handle_group_message(self, ctx: EventContext):
+        """处理接收群消息"""
+        user_id = str(ctx.event.sender_id)
+        message = ctx.event.text_message
+
+        # 处理 AI 回复的好感度变化
+        await self.process_ai_response(ctx, user_id, message)
+
+        if message == "/查看好感度":
+            await self.handle_query_command(ctx, user_id)
+
+    async def process_ai_response(self, ctx: EventContext, user_id: str, message: str):
+        """处理 AI 的回复并更新好感度"""
+        match = self.reply_pattern.search(message)
+        if match:
+            delta = int(match.group(0)[-2:])  # 获取好感度变化值
+            reason = "AI回复"  # 记录原因
+            self.update_score(user_id, delta, reason)
+            await self.save_data()  # 每次更新后保存数据
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
@@ -76,40 +108,6 @@ class RelationManager(BasePlugin):
 
         # 保留最近50条记录
         relation["history"] = relation["history"][-50:]
-
-        self.ap.logger.info(f"用户 {user_id} 好感度变化：{actual_delta}，当前：{relation['score']}")  # 添加日志
-
-    @handler(PersonNormalMessageReceived)
-    async def handle_person_message(self, ctx: EventContext):
-        """处理接收个人消息"""
-        user_id = str(ctx.event.sender_id)
-        message = ctx.event.text_message
-
-        # 更新最后互动时间
-        self.get_relation(user_id)  # 确保用户数据存在
-
-        if message == "/查看好感度":
-            await self.handle_query_command(ctx, user_id)
-        else:
-            # 在这里可以根据消息内容更新好感度
-            self.update_score(user_id, 1, "用户发送消息")  # 示例：增加1分
-            await self.save_data()  # 保存数据
-
-    @handler(GroupNormalMessageReceived)
-    async def handle_group_message(self, ctx: EventContext):
-        """处理接收群消息"""
-        user_id = str(ctx.event.sender_id)
-        message = ctx.event.text_message
-
-        # 更新最后互动时间
-        self.get_relation(user_id)  # 确保用户数据存在
-
-        if message == "/查看好感度":
-            await self.handle_query_command(ctx, user_id)
-        else:
-            # 在这里可以根据消息内容更新好感度
-            self.update_score(user_id, 1, "用户发送群消息")  # 示例：增加1分
-            await self.save_data()  # 保存数据
 
     async def handle_query_command(self, ctx: EventContext, user_id: str):
         """处理查询好感度的命令"""
