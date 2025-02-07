@@ -28,9 +28,9 @@ class RelationManager(BasePlugin):
             if self.data_path.exists():
                 with open(self.data_path, "r", encoding="utf-8") as f:
                     self.relation_data = json.load(f)
-                self.host.logger.info("关系数据加载成功")
+                self.ap.logger.info("关系数据加载成功")
         except Exception as e:
-            self.host.logger.error(f"数据加载失败: {str(e)}")
+            self.ap.logger.error(f"数据加载失败: {str(e)}")
             self.relation_data = {}
 
     async def save_data(self):
@@ -46,7 +46,7 @@ class RelationManager(BasePlugin):
             with open(self.data_path, "w", encoding="utf-8") as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            self.host.logger.error(f"数据保存失败: {str(e)}")
+            self.ap.logger.error(f"数据保存失败: {str(e)}")
 
     def get_relation(self, user_id: str) -> dict:
         """获取或初始化用户关系数据"""
