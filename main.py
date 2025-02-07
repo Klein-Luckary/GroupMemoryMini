@@ -29,69 +29,69 @@ class RelationManager(BasePlugin):
         await self.load_data()
 
     async def load_data(self):
-    """安全加载数据（自动修复损坏文件）"""
-    try:
-        if self.data_path.exists():
-            # 读取文件内容并验证完整性
-            raw_content = self.data_path.read_text(encoding="utf-8")
-            
-            # 检查空文件
-            if not raw_content.strip():
-                raise json.JSONDecodeError("Empty file", doc="", pos=0)
-                
-            # 尝试解析JSON
-            self.relation_data = json.loads(raw_content)
-            self.ap.logger.info("关系数据加载成功")
-            
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        # 备份损坏文件
-        corrupt_path = self.data_path.with_name(f"corrupt_{datetime.now().strftime('%Y%m%d%H%M')}_relation_data.json")
-        self.data_path.rename(corrupt_path)
-        
-        # 初始化空数据
-        self.relation_data = {}
-        self.ap.logger.error(f"数据文件损坏，已备份至 {corrupt_path}，初始化新数据")
-        
-    except Exception as e:
-        self.ap.logger.error(f"未知加载错误: {str(e)}")
-        self.relation_data = {}
-
-    async def save_data(self):
-    """安全保存数据（三重保险）"""
-    MAX_RETRIES = 3
-    for attempt in range(MAX_RETRIES):
+        """安全加载数据（自动修复损坏文件）"""
         try:
-            # 序列化数据并验证
-            json_data = json.dumps(self.relation_data, ensure_ascii=False, indent=2)
-            json.loads(json_data)  # 验证序列化结果
-            
-            # 使用临时文件写入
-            temp_path = self.data_path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                f.write(json_data)
-                f.flush()  # 强制写入磁盘
-                os.fsync(f.fileno())  # 确保写入完成
+            if self.data_path.exists():
+                # 读取文件内容并验证完整性
+                raw_content = self.data_path.read_text(encoding="utf-8")
                 
-            # 原子替换文件
-            if sys.platform == 'win32':
-                # Windows需要先删除原文件
-                if self.data_path.exists():
-                    self.data_path.unlink()
-            temp_path.replace(self.data_path)
-            return
+                # 检查空文件
+                if not raw_content.strip():
+                    raise json.JSONDecodeError("Empty file", doc="", pos=0)
+                    
+                # 尝试解析JSON
+                self.relation_data = json.loads(raw_content)
+                self.ap.logger.info("关系数据加载成功")
+                
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            # 备份损坏文件
+            corrupt_path = self.data_path.with_name(f"corrupt_{datetime.now().strftime('%Y%m%d%H%M')}_relation_data.json")
+            self.data_path.rename(corrupt_path)
+        
+            # 初始化空数据
+            self.relation_data = {}
+            self.ap.logger.error(f"数据文件损坏，已备份至 {corrupt_path}，初始化新数据")
             
-        except (json.JSONDecodeError, TypeError) as e:
-            self.ap.logger.error(f"数据序列化失败: {str(e)}")
-            break
-        except OSError as e:
-            if attempt == MAX_RETRIES - 1:
-                self.ap.logger.error(f"保存失败（尝试 {MAX_RETRIES} 次后）: {str(e)}")
-            else:
-                self.ap.logger.warning(f"保存失败（第 {attempt+1} 次重试）: {str(e)}")
-                await asyncio.sleep(0.5)
         except Exception as e:
-            self.ap.logger.error(f"未知保存错误: {str(e)}")
-            break
+            self.ap.logger.error(f"未知加载错误: {str(e)}")
+            self.relation_data = {}
+    
+        async def save_data(self):
+            """安全保存数据（三重保险）"""
+            MAX_RETRIES = 3
+            for attempt in range(MAX_RETRIES):
+            try:
+                # 序列化数据并验证
+                json_data = json.dumps(self.relation_data, ensure_ascii=False, indent=2)
+                json.loads(json_data)  # 验证序列化结果
+                
+                # 使用临时文件写入
+                temp_path = self.data_path.with_suffix(".tmp")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    f.write(json_data)
+                    f.flush()  # 强制写入磁盘
+                    os.fsync(f.fileno())  # 确保写入完成
+                
+                # 原子替换文件
+                if sys.platform == 'win32':
+                    # Windows需要先删除原文件
+                    if self.data_path.exists():
+                        self.data_path.unlink()
+                temp_path.replace(self.data_path)
+                return
+            
+            except (json.JSONDecodeError, TypeError) as e:
+                self.ap.logger.error(f"数据序列化失败: {str(e)}")
+                break
+            except OSError as e:
+                if attempt == MAX_RETRIES - 1:
+                    self.ap.logger.error(f"保存失败（尝试 {MAX_RETRIES} 次后）: {str(e)}")
+                else:
+                    self.ap.logger.warning(f"保存失败（第 {attempt+1} 次重试）: {str(e)}")
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                self.ap.logger.error(f"未知保存错误: {str(e)}")
+                break
 
 def get_relation(self, user_id: str) -> dict:
     """获取用户数据（带自动修复）"""
