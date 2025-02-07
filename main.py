@@ -33,23 +33,20 @@ class RelationManager(BasePlugin):
             self.ap.logger.error(f"数据加载失败: {str(e)}")
             self.relation_data = {}
 
- async def save_data(self):
-    """保存数据（带版本控制）"""
-    try:
-        backup_path = self.data_path.with_suffix(f".bak_{datetime.now().strftime('%Y%m%d%H%M')}")
-        
-        # 检查备份文件是否存在，如果存在则删除
-        if backup_path.exists():
-            backup_path.unlink()  # 删除旧的备份文件
+    async def save_data(self):
+        """保存数据（带版本控制）"""
+        try:
+            backup_path = self.data_path.with_suffix(f".bak_{datetime.now().strftime('%Y%m%d%H%M')}")
+            if backup_path.exists():
+                backup_path.unlink()  # 删除旧的备份文件
 
-        if self.data_path.exists():
-            self.data_path.rename(backup_path)
+            if self.data_path.exists():
+                self.data_path.rename(backup_path)
 
-        with open(self.data_path, "w", encoding="utf-8") as f:
-            json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        self.ap.logger.error(f"数据保存失败: {str(e)}")
-
+            with open(self.data_path, "w", encoding="utf-8") as f:
+                json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.ap.logger.error(f"数据保存失败: {str(e)}")
 
     def get_relation(self, user_id: str) -> dict:
         """获取或初始化用户关系数据"""
@@ -62,63 +59,27 @@ class RelationManager(BasePlugin):
             }
         return self.relation_data[user_id]
 
-    def update_score(self, user_id: str, delta: int, reason: str):
-        """更新关系分数并记录历史"""
-        relation = self.get_relation(user_id)
-        new_score = max(0, min(100, relation["score"] + delta))
-        actual_delta = new_score - relation["score"]
-
-        relation["score"] = new_score
-        relation["history"].append({
-            "timestamp": datetime.now().isoformat(),
-            "delta": actual_delta,
-            "reason": reason
-        })
-        relation["last_interaction"] = datetime.now().isoformat()
-
-        # 保留最近50条记录
-        relation["history"] = relation["history"][-50:]
-
-    async def generate_context_prompt(self, user_id: str) -> str:
-        """生成上下文提示"""
-        relation = self.get_relation(user_id)
-        last_5 = [f"{h['delta']:+} ({h['reason']})" for h in relation["history"][-5:]]
-
-        return f"""
-        [关系上下文] 
-        当前用户：{user_id}
-        关系分数：{relation['score']}/100 
-        近期变动：{", ".join(last_5) if last_5 else "无"}
-        特别备注：{relation['custom_note'] or "无"}
-        """
-
-    @handler(PersonNormalMessageReceived)
-    async def person_normal_message_received(self, ctx: EventContext):
-        """处理接收个人消息"""
+    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
+    async def handle_message(self, ctx: EventContext):
+        """处理接收消息"""
         user_id = str(ctx.event.sender_id)
-        context_prompt = await self.generate_context_prompt(user_id)
+        # 这里可以添加其他处理逻辑
+
+    @handler(command="/查看好感度")
+    async def handle_query_command(self, ctx: EventContext):
+        """处理查询好感度的命令"""
+        user_id = str(ctx.event.sender_id)
+        relation = self.get_relation(user_id)
         
-        # 在原始消息前添加关系上下文
-        original_msg = ctx.event.text_message
-        ctx.event.text_message = f"{context_prompt}\n用户消息：{original_msg}"
-
-        # 更新最后互动时间
-        self.get_relation(user_id)  # 确保数据存在
-        await self.save_data()
-
-    @handler(GroupNormalMessageReceived)
-    async def group_normal_message_received(self, ctx: EventContext):
-        """处理接收群消息"""
-        user_id = str(ctx.event.sender_id)
-        context_prompt = await self.generate_context_prompt(user_id)
-
-        # 在原始消息前添加关系上下文
-        original_msg = ctx.event.text_message
-        ctx.event.text_message = f"{context_prompt}\n用户消息：{original_msg}"
-
-        # 更新最后互动时间
-        self.get_relation(user_id)  # 确保数据存在
-        await self.save_data()
+        response = (
+            f"【关系状态】\n"
+            f"当前分数：{relation['score']}/100\n"
+            f"最后互动：{relation['last_interaction'][:10]}\n"
+            f"特别备注：{relation['custom_note'] or '无'}"
+        )
+        
+        ctx.add_return("reply", [response])
+        ctx.prevent_default()
 
     def __del__(self):
         """插件卸载时保存数据"""
