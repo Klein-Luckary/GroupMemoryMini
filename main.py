@@ -1,5 +1,6 @@
 import json
 import re
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
@@ -70,7 +71,7 @@ class RelationManager(BasePlugin):
             await self.handle_query_command(ctx, user_id)
 
         # 检查 AI 的回复
-        self.process_ai_feedback(user_id, message)
+        await self.process_ai_feedback(user_id, message)
 
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
@@ -82,9 +83,9 @@ class RelationManager(BasePlugin):
             await self.handle_query_command(ctx, user_id)
 
         # 检查 AI 的回复
-        self.process_ai_feedback(user_id, message)
+        await self.process_ai_feedback(user_id, message)
 
-    def process_ai_feedback(self, user_id: str, message: str):
+    async def process_ai_feedback(self, user_id: str, message: str):
         """处理AI的反馈，更新好感度"""
         match = self.reply_pattern.search(message)
         if match:
@@ -92,7 +93,7 @@ class RelationManager(BasePlugin):
             reason = "AI自动评估"
             self.update_score(user_id, delta, reason)
             self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
-            asyncio.run(self.save_data())  # 保存数据
+            await self.save_data()  # 保存数据
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
@@ -125,6 +126,5 @@ class RelationManager(BasePlugin):
         ctx.add_return("reply", [response])
         ctx.prevent_default()
 
-
     def __del__(self):
-        pass 
+        pass
