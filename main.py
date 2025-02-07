@@ -45,6 +45,7 @@ class RelationManager(BasePlugin):
 
             with open(self.data_path, "w", encoding="utf-8") as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+            self.ap.logger.info("数据保存成功")
         except Exception as e:
             self.ap.logger.error(f"数据保存失败: {str(e)}")
 
@@ -93,6 +94,8 @@ class RelationManager(BasePlugin):
             self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
             # 保存数据
             asyncio.run(self.save_data())
+        else:
+            self.ap.logger.info(f"未检测到好感度变动：{message}")
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
@@ -110,6 +113,9 @@ class RelationManager(BasePlugin):
 
         # 保留最近50条记录
         relation["history"] = relation["history"][-50:]
+
+        # 打印当前关系数据以进行调试
+        self.ap.logger.info(f"更新后的关系数据: {relation}")
 
     async def handle_query_command(self, ctx: EventContext, user_id: str):
         """处理查询好感度的命令"""
