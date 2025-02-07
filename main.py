@@ -63,22 +63,22 @@ class RelationManager(BasePlugin):
     async def handle_person_message(self, ctx: EventContext):
         """处理接收个人消息"""
         user_id = str(ctx.event.sender_id)
+        message = ctx.event.text_message
 
-        # 这里可以添加处理个人消息的逻辑
-        # 例如：返回好感度等信息
+        if message == "/查看好感度":
+            await self.handle_query_command(ctx, user_id)
 
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
         """处理接收群消息"""
         user_id = str(ctx.event.sender_id)
+        message = ctx.event.text_message
 
-        # 这里可以添加处理群消息的逻辑
-        # 例如：返回好感度等信息
+        if message == "/查看好感度":
+            await self.handle_query_command(ctx, user_id)
 
-    @handler(command="/查看好感度")
-    async def handle_query_command(self, ctx: EventContext):
+    async def handle_query_command(self, ctx: EventContext, user_id: str):
         """处理查询好感度的命令"""
-        user_id = str(ctx.event.sender_id)
         relation = self.get_relation(user_id)
 
         response = (
