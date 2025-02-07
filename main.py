@@ -21,7 +21,7 @@ class RelationManager(BasePlugin):
         self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        # 匹配AI回复中的好感度调整标记（支持多种格式）
+        # 匹配AI回复中的好感度调整标记（支持多种格式）（可修改）
         self.pattern = re.compile(r"\[好感度([+-]?\d+)\]|好感度\s*[：:]\s*([+-]?\d+)")
 
     async def initialize(self):
@@ -57,80 +57,54 @@ class RelationManager(BasePlugin):
             self.relation_data = {}
     
     async def save_data(self):
-        """安全保存数据（三重保险）"""
-        MAX_RETRIES = 3
-        for attempt in range(MAX_RETRIES):
-            try:
-                # 序列化数据并验证
-                json_data = json.dumps(self.relation_data, ensure_ascii=False, indent=2)
-                json.loads(json_data)  # 验证序列化结果
-                
-                # 使用临时文件写入
-                temp_path = self.data_path.with_suffix(".tmp")
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    f.write(json_data)
-                    f.flush()  # 强制写入磁盘
-                    os.fsync(f.fileno())  # 确保写入完成
-                
-                # 原子替换文件
-                if sys.platform == 'win32':
-                    # Windows需要先删除原文件
-                    if self.data_path.exists():
-                        self.data_path.unlink()
-                temp_path.replace(self.data_path)
-                return
+        """原子化保存数据"""
+        try:
+            temp_path = self.data_path.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+            temp_path.replace(self.data_path)
+        except Exception as e:
+            self.ap.logger.error(f"数据保存失败: {str(e)}")
             
-            except (json.JSONDecodeError, TypeError) as e:
-                self.ap.logger.error(f"数据序列化失败: {str(e)}")
-                break
-            except OSError as e:
-                if attempt == MAX_RETRIES - 1:
-                    self.ap.logger.error(f"保存失败（尝试 {MAX_RETRIES} 次后）: {str(e)}")
-                else:
-                    self.ap.logger.warning(f"保存失败（第 {attempt+1} 次重试）: {str(e)}")
-                    await asyncio.sleep(0.5)
-            except Exception as e:
-                self.ap.logger.error(f"未知保存错误: {str(e)}")
-                break
+    def get_relation(self, user_id: str) -> dict:
+        """获取用户数据（带自动修复）"""
+        try:
+            data = self.relation_data.get(user_id, {})
+            
+            # 数据完整性检查
+            required_keys = {"score", "history", "last_interaction", "custom_note"}
+            if not required_keys.issubset(data.keys()):
+                raise KeyError("Missing required keys")
+            
+            # 类型校验
+            if not isinstance(data["score"], int):
+                data["score"] = int(data["score"])
+            
+            # 数值范围限制
+            data["score"] = max(0, min(100, data["score"]))
+        
+            # 时间格式修复
+            if "T" not in data["last_interaction"]:
+                data["last_interaction"] = datetime.now().isoformat()
+            
+            # 更新数据结构
+            self.relation_data[user_id] = data
+            return data
+        
+        except Exception as e:
+            self.ap.logger.warning(f"用户 {user_id} 数据损坏，已重置: {str(e)}")
+            self.relation_data[user_id] = self._init_user_data()
+            return self.relation_data[user_id]
 
-def get_relation(self, user_id: str) -> dict:
-    """获取用户数据（带自动修复）"""
-    try:
-        data = self.relation_data.get(user_id, {})
+    def _init_user_data(self) -> dict:
+        """初始化用户数据结构模板"""
+        return {
+            "score": 50,
+            "history": [],
+            "last_interaction": datetime.now().isoformat(),
+            "custom_note": ""
+        }
         
-        # 数据完整性检查
-        required_keys = {"score", "history", "last_interaction", "custom_note"}
-        if not required_keys.issubset(data.keys()):
-            raise KeyError("Missing required keys")
-            
-        # 类型校验
-        if not isinstance(data["score"], int):
-            data["score"] = int(data["score"])
-            
-        # 数值范围限制
-        data["score"] = max(0, min(100, data["score"]))
-        
-        # 时间格式修复
-        if "T" not in data["last_interaction"]:
-            data["last_interaction"] = datetime.now().isoformat()
-            
-        # 更新数据结构
-        self.relation_data[user_id] = data
-        return data
-        
-    except Exception as e:
-        self.ap.logger.warning(f"用户 {user_id} 数据损坏，已重置: {str(e)}")
-        self.relation_data[user_id] = self._init_user_data()
-        return self.relation_data[user_id]
-
-def _init_user_data(self) -> dict:
-    """初始化用户数据结构模板"""
-    return {
-        "score": 50,
-        "history": [],
-        "last_interaction": datetime.now().isoformat(),
-        "custom_note": ""
-    }
     @handler(NormalMessageResponded)
     async def handle_ai_response(self, ctx: EventContext):
         """处理AI的回复消息"""
