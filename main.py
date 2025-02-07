@@ -60,7 +60,7 @@ class RelationManager(BasePlugin):
         """安全保存数据（三重保险）"""
         MAX_RETRIES = 3
         for attempt in range(MAX_RETRIES):
-        try:
+            try:
                 # 序列化数据并验证
                 json_data = json.dumps(self.relation_data, ensure_ascii=False, indent=2)
                 json.loads(json_data)  # 验证序列化结果
