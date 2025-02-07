@@ -3,18 +3,18 @@ import re
 from pathlib import Path
 from datetime import datetime
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
-from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived
+from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived, LlmResponseGenerated
 
 @register(
     name="GroupMemoryMini",
     description="智能关系管理系统",
-    version="1.1",
+    version="2.0",
     author="KL"
 )
 class RelationManager(BasePlugin):
     def __init__(self, host: APIHost):
         self.host = host
-        self.data_path = Path("data/relation_data.json")
+        self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")  # 更新为相对路径
         self.relation_data = {}
         self.reply_pattern = re.compile(r"好感度([+-]\d+)")  # 匹配AI回复中的好感度调整标记
 
@@ -65,9 +65,6 @@ class RelationManager(BasePlugin):
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
-        # 处理 AI 回复的好感度变化
-        await self.process_ai_response(ctx, user_id, message)
-
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
@@ -77,20 +74,28 @@ class RelationManager(BasePlugin):
         user_id = str(ctx.event.sender_id)
         message = ctx.event.text_message
 
-        # 处理 AI 回复的好感度变化
-        await self.process_ai_response(ctx, user_id, message)
-
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-    async def process_ai_response(self, ctx: EventContext, user_id: str, message: str):
-        """处理 AI 的回复并更新好感度"""
-        match = self.reply_pattern.search(message)
+    @handler(LlmResponseGenerated)
+    async def handle_ai_response(self, ctx: EventContext):
+        """处理AI生成的回复"""
+        user_id = str(ctx.event.receiver_id)
+        ai_response = ctx.event.response
+
+        # 检测好感度调整标记
+        match = self.reply_pattern.search(ai_response)
         if match:
-            delta = int(match.group(0)[-2:])  # 获取好感度变化值
-            reason = "AI回复"  # 记录原因
+            delta = int(match.group(1))
+            reason = "AI自动评估"
             self.update_score(user_id, delta, reason)
-            await self.save_data()  # 每次更新后保存数据
+            await self.save_data()  # 保存数据
+
+            # 清理回复中的标记
+            clean_response = self.reply_pattern.sub("", ai_response).strip()
+            ctx.event.response = clean_response
+
+            self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
@@ -122,6 +127,7 @@ class RelationManager(BasePlugin):
 
         ctx.add_return("reply", [response])
         ctx.prevent_default()
+
 
     def __del__(self):
         pass 
