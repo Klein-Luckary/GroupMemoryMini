@@ -33,17 +33,23 @@ class RelationManager(BasePlugin):
             self.ap.logger.error(f"数据加载失败: {str(e)}")
             self.relation_data = {}
 
-    async def save_data(self):
-        """保存数据（带版本控制）"""
-        try:
-            backup_path = self.data_path.with_suffix(f".bak_{datetime.now().strftime('%Y%m%d%H%M')}")
-            if self.data_path.exists():
-                self.data_path.rename(backup_path)
+ async def save_data(self):
+    """保存数据（带版本控制）"""
+    try:
+        backup_path = self.data_path.with_suffix(f".bak_{datetime.now().strftime('%Y%m%d%H%M')}")
+        
+        # 检查备份文件是否存在，如果存在则删除
+        if backup_path.exists():
+            backup_path.unlink()  # 删除旧的备份文件
 
-            with open(self.data_path, "w", encoding="utf-8") as f:
-                json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            self.ap.logger.error(f"数据保存失败: {str(e)}")
+        if self.data_path.exists():
+            self.data_path.rename(backup_path)
+
+        with open(self.data_path, "w", encoding="utf-8") as f:
+            json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        self.ap.logger.error(f"数据保存失败: {str(e)}")
+
 
     def get_relation(self, user_id: str) -> dict:
         """获取或初始化用户关系数据"""
