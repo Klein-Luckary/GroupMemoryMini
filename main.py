@@ -99,7 +99,7 @@ class RelationManager(BasePlugin):
     def _init_user_data(self) -> dict:
         """初始化用户数据结构模板"""
         return {
-            "score": 50,
+            "score": 50, #初始值可改
             "history": [],
             "last_interaction": datetime.now().isoformat(),
             "custom_note": ""
