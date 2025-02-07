@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
-from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived, LlmResponseGenerated
+from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived
 
 @register(
     name="GroupMemoryMini",
@@ -68,6 +68,9 @@ class RelationManager(BasePlugin):
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
+        # 处理AI回复中的好感度变化
+        self.process_ai_feedback(user_id, message)
+
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
         """处理接收群消息"""
@@ -77,25 +80,19 @@ class RelationManager(BasePlugin):
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-    @handler(LlmResponseGenerated)
-    async def handle_ai_response(self, ctx: EventContext):
-        """处理AI生成的回复"""
-        user_id = str(ctx.event.receiver_id)
-        ai_response = ctx.event.response
+        # 处理AI回复中的好感度变化
+        self.process_ai_feedback(user_id, message)
 
-        # 检测好感度调整标记
-        match = self.reply_pattern.search(ai_response)
+    def process_ai_feedback(self, user_id: str, message: str):
+        """处理AI的反馈，更新好感度"""
+        match = self.reply_pattern.search(message)
         if match:
             delta = int(match.group(1))
             reason = "AI自动评估"
             self.update_score(user_id, delta, reason)
-            await self.save_data()  # 保存数据
-
-            # 清理回复中的标记
-            clean_response = self.reply_pattern.sub("", ai_response).strip()
-            ctx.event.response = clean_response
-
             self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
+            # 保存数据
+            asyncio.run(self.save_data())
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
