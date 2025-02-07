@@ -72,16 +72,16 @@ class RelationManager(BasePlugin):
             data = self.relation_data.get(user_id, {})
             
             # 数据完整性检查
-            required_keys = {"score", "history", "last_interaction", "custom_note"}
+            required_keys = {"evaluation", "history", "last_interaction", "custom_note"}
             if not required_keys.issubset(data.keys()):
                 raise KeyError("Missing required keys")
             
             # 类型校验
-            if not isinstance(data["score"], int):
-                data["score"] = int(data["score"])
+            if not isinstance(data["evaluation"], int):
+                data["evaluation"] = int(data["evaluation"])
             
             # 数值范围限制
-            data["score"] = max(0, min(100, data["score"]))
+            data["evaluation"] = max(0, min(100, data["evaluation"]))
         
             # 时间格式修复
             if "T" not in data["last_interaction"]:
@@ -99,7 +99,7 @@ class RelationManager(BasePlugin):
     def _init_user_data(self) -> dict:
         """初始化用户数据结构模板"""
         return {
-            "score": 50, #初始值可改
+            "evaluation": 50, #初始值可改
             "history": [],
             "last_interaction": datetime.now().isoformat(),
             "custom_note": ""
@@ -137,10 +137,10 @@ class RelationManager(BasePlugin):
             if total_adjustment != 0:
                 # 更新用户数据
                 relation = self.get_relation(user_id)
-                new_score = max(0, min(100, relation["score"] + total_adjustment))
-                actual_adjustment = new_score - relation["score"]
+                new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
+                actual_adjustment = new_evaluation - relation["evaluation"]
                 
-                relation["score"] = new_score
+                relation["evaluation"] = new_evaluation
                 relation["history"].append({
                     "timestamp": datetime.now().isoformat(),
                     "adjustment": actual_adjustment,
@@ -149,7 +149,7 @@ class RelationManager(BasePlugin):
                 relation["last_interaction"] = datetime.now().isoformat()
                 
                 await self.save_data()
-                self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_score}")
+                self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_evaluation}")
 
                 # 更新回复内容
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
@@ -166,7 +166,7 @@ class RelationManager(BasePlugin):
             
             report = (
                 f"【关系状态】\n"
-                f"• 当前评价值：{relation['score']}/100\n"
+                f"• 当前评价值：{relation['evaluation']}/100\n"
                 f"• 历史调整：{len(relation['history'])}次\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
