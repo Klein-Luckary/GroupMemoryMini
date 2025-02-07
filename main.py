@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
-from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived
+from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived, LlmResponseGenerated
 
 @register(
     name="GroupMemoryMini",
@@ -69,9 +69,6 @@ class RelationManager(BasePlugin):
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-        # 处理AI回复中的好感度变化
-        self.process_ai_feedback(user_id, message)
-
     @handler(GroupNormalMessageReceived)
     async def handle_group_message(self, ctx: EventContext):
         """处理接收群消息"""
@@ -81,21 +78,24 @@ class RelationManager(BasePlugin):
         if message == "/查看好感度":
             await self.handle_query_command(ctx, user_id)
 
-        # 处理AI回复中的好感度变化
-        self.process_ai_feedback(user_id, message)
+    @handler(LlmResponseGenerated)
+    async def handle_ai_response(self, ctx: EventContext):
+        """处理AI生成的回复"""
+        user_id = str(ctx.event.receiver_id)
+        ai_response = ctx.event.response
 
-    def process_ai_feedback(self, user_id: str, message: str):
-        """处理AI的反馈，更新好感度"""
-        match = self.reply_pattern.search(message)
+        # 检测好感度调整标记
+        match = self.reply_pattern.search(ai_response)
         if match:
             delta = int(match.group(1))
             reason = "AI自动评估"
             self.update_score(user_id, delta, reason)
             self.ap.logger.info(f"用户 {user_id} 好感度变化：{delta}，当前：{self.get_relation(user_id)['score']}")
-            # 保存数据
-            asyncio.run(self.save_data())
-        else:
-            self.ap.logger.info(f"未检测到好感度变动：{message}")
+            await self.save_data()  # 保存数据
+
+            # 清理回复中的标记
+            clean_response = self.reply_pattern.sub("", ai_response).strip()
+            ctx.event.response = clean_response
 
     def update_score(self, user_id: str, delta: int, reason: str):
         """更新关系分数并记录历史"""
@@ -113,9 +113,6 @@ class RelationManager(BasePlugin):
 
         # 保留最近50条记录
         relation["history"] = relation["history"][-50:]
-
-        # 打印当前关系数据以进行调试
-        self.ap.logger.info(f"更新后的关系数据: {relation}")
 
     async def handle_query_command(self, ctx: EventContext, user_id: str):
         """处理查询好感度的命令"""
