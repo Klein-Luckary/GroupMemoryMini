@@ -125,6 +125,5 @@ class RelationManager(BasePlugin):
         ctx.add_return("reply", [response])
         ctx.prevent_default()
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """插件卸载时保存数据"""
-        await self.save_data()
+    def __del__(self):
+        pass 
