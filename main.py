@@ -3,16 +3,12 @@ import re
 from pathlib import Path
 from datetime import datetime
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
-from pkg.plugin.events import (
-    GroupNormalMessageReceived,
-    PersonNormalMessageReceived,
-    NormalMessageResponded
-)
+from pkg.plugin.events import GroupNormalMessageReceived, PersonNormalMessageReceived
 
 @register(
     name="GroupMemoryMini",
     description="智能关系管理系统",
-    version="2.1",
+    version="2.3",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -20,8 +16,9 @@ class RelationManager(BasePlugin):
         self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        # 增强正则匹配模式，支持中文符号和空格
-        self.reply_pattern = re.compile(r"好感度\s*[：:]\s*([+-]\d+)")
+        # 匹配 AI 回复中的好感度调整指令
+        self.adjust_pattern = re.compile(r"好感度\s*([+-]\d+)")
+        self.ai_user_id = "aiKlein3.0"  # 替换为 AI 的实际用户 ID
 
     async def initialize(self):
         """异步初始化"""
@@ -62,64 +59,60 @@ class RelationManager(BasePlugin):
             }
         return self.relation_data[user_id]
 
-    @handler(NormalMessageResponded)
-    async def handle_response(self, ctx: EventContext):
-        """处理AI的回复消息"""
-        response = ctx.event.response
-        sender_id = str(ctx.event.receiver_id)  # 接收者即消息发送者
+    async def adjust_relation_score(self, user_id: str, adjustment: int):
+        """调整用户好感度"""
+        relation = self.get_relation(user_id)
+        new_score = max(0, min(100, relation["score"] + adjustment))
+        actual_adjustment = new_score - relation["score"]
         
-        # 匹配好感度调整
-        match = self.reply_pattern.search(response)
-        if match:
-            try:
-                adjustment = int(match.group(1))
-                # 获取用户数据
-                relation = self.get_relation(sender_id)
-                
-                # 应用分数调整（限制在0-100之间）
-                new_score = max(0, min(100, relation["score"] + adjustment))
-                actual_adjustment = new_score - relation["score"]
-                
-                if actual_adjustment != 0:
-                    relation["score"] = new_score
-                    relation["history"].append({
-                        "timestamp": datetime.now().isoformat(),
-                        "adjustment": actual_adjustment,
-                        "reason": "AI回复触发"
-                    })
-                    relation["last_interaction"] = datetime.now().isoformat()
-                    
-                    await self.save_data()
-                    self.ap.logger.info(f"用户 {sender_id} 好感度变化: {actual_adjustment}, 当前: {new_score}")
-                
-                # 从回复内容移除调整标记
-                new_response = self.reply_pattern.sub("", response).strip()
-                ctx.event.response = new_response if new_response else "[好感度已更新]"
-
-            except ValueError:
-                self.ap.logger.warning(f"无效的好感度数值: {match.group(1)}")
+        if actual_adjustment != 0:
+            relation["score"] = new_score
+            relation["history"].append({
+                "timestamp": datetime.now().isoformat(),
+                "adjustment": actual_adjustment,
+                "reason": "AI回复触发"
+            })
+            relation["last_interaction"] = datetime.now().isoformat()
+            
+            await self.save_data()
+            self.ap.logger.info(f"用户 {user_id} 好感度变化: {actual_adjustment}, 当前: {new_score}")
+        
+        return actual_adjustment
 
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
-    async def handle_query(self, ctx: EventContext):
-        """统一处理查询命令"""
-        msg = ctx.event.text_message
-        user_id = str(ctx.event.sender_id)
-        
-        if msg.strip() == "/查看好感度":
-            relation = self.get_relation(user_id)
-            
-            # 生成关系报告
-            report = (
-                f"【关系状态】\n"
-                f"当前好感：{relation['score']}/100\n"
-                f"历史调整：{len(relation['history'])}次\n"
-                f"最后互动：{relation['last_interaction'][:10]}\n"
-                f"特别备注：{relation['custom_note'] or '暂无备注'}"
-            )
-            
-            ctx.add_return("reply", [report])
-            ctx.prevent_default()
+    async def handle_message(self, ctx: EventContext):
+        """处理消息"""
+        msg = ctx.event.text_message.strip()
+        sender_id = str(ctx.event.sender_id)
+        is_ai = sender_id == self.ai_user_id  # 判断消息是否来自 AI
+
+        if is_ai:
+            # 解析 AI 回复中的好感度调整指令
+            match = self.adjust_pattern.search(msg)
+            if match:
+                try:
+                    adjustment = int(match.group(1))
+                    # 获取接收者 ID（即用户 ID）
+                    receiver_id = str(ctx.event.receiver_id)
+                    actual_adjustment = await self.adjust_relation_score(receiver_id, adjustment)
+                    self.ap.logger.info(f"AI 调整用户 {receiver_id} 好感度: {actual_adjustment}")
+                except ValueError:
+                    self.ap.logger.warning(f"无效的好感度数值: {match.group(1)}")
+        else:
+            # 处理用户的查询指令
+            if msg == "/查看好感度":
+                user_id = str(ctx.event.sender_id)
+                relation = self.get_relation(user_id)
+                report = (
+                    f"【关系状态】\n"
+                    f"当前好感：{relation['score']}/100\n"
+                    f"历史调整：{len(relation['history'])}次\n"
+                    f"最后互动：{relation['last_interaction'][:10]}\n"
+                    f"特别备注：{relation['custom_note'] or '暂无备注'}"
+                )
+                ctx.add_return("reply", [report])
+                ctx.prevent_default()
 
     def __del__(self):
         pass
