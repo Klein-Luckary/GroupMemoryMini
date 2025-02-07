@@ -58,7 +58,7 @@ class RelationManager(BasePlugin):
     
     async def save_data(self):
         """安全保存数据（三重保险）"""
-         MAX_RETRIES = 3
+        MAX_RETRIES = 3
         for attempt in range(MAX_RETRIES):
         try:
                 # 序列化数据并验证
