@@ -59,27 +59,33 @@ class RelationManager(BasePlugin):
             }
         return self.relation_data[user_id]
 
-    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
-    async def handle_message(self, ctx: EventContext):
-        """处理接收消息"""
-        user_id = str(ctx.event.sender_id)
-        # 这里可以添加其他处理逻辑
+@handler(GroupNormalMessageReceived)
+async def handle_group_message(self, ctx: EventContext):
+    """处理群组消息"""
+    user_id = str(ctx.event.sender_id)
+    # 这里可以添加其他处理逻辑
 
-    @handler(command="/查看好感度")
-    async def handle_query_command(self, ctx: EventContext):
-        """处理查询好感度的命令"""
-        user_id = str(ctx.event.sender_id)
-        relation = self.get_relation(user_id)
-        
-        response = (
-            f"【关系状态】\n"
-            f"当前分数：{relation['score']}/100\n"
-            f"最后互动：{relation['last_interaction'][:10]}\n"
-            f"特别备注：{relation['custom_note'] or '无'}"
-        )
-        
-        ctx.add_return("reply", [response])
-        ctx.prevent_default()
+@handler(PersonNormalMessageReceived)
+async def handle_person_message(self, ctx: EventContext):
+    """处理个人消息"""
+    user_id = str(ctx.event.sender_id)
+    # 这里可以添加其他处理逻辑
+
+@handler(command="/查看好感度")
+async def handle_query_command(self, ctx: EventContext):
+    """处理查询好感度的命令"""
+    user_id = str(ctx.event.sender_id)
+    relation = self.get_relation(user_id)
+    
+    response = (
+        f"【关系状态】\n"
+        f"当前分数：{relation['score']}/100\n"
+        f"最后互动：{relation['last_interaction'][:10]}\n"
+        f"特别备注：{relation['custom_note'] or '无'}"
+    )
+    
+    ctx.add_return("reply", [response])
+    ctx.prevent_default()
 
     def __del__(self):
         pass
