@@ -76,7 +76,7 @@ class RelationManager(BasePlugin):
     async def generate_context_prompt(self, user_id: str) -> str:
         """生成上下文提示"""
         relation = self.get_relation(user_id)
-        last_5 = [f"{h['delta']:+} ({h['reason']})" for h in relation["history"][-5:]
+        last_5 = [f"{h['delta']:+} ({h['reason']})" for h in relation["history"][-5:]]
 
         return f"""
         [关系上下文] 
