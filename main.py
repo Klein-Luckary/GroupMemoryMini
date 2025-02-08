@@ -92,11 +92,8 @@ class RelationManager(BasePlugin):
             f"- 特殊备注: {relation['custom_note'] or '无'}\n"
         )
         
-        # 将关系信息注入到回复消息中
-        if hasattr(event, 'response_text') and event.response_text:
-            ctx.event.response_text = f"{relation_info}\n{event.response_text}"
-        else:
-            ctx.event.response_text = relation_info
+        # 将关系信息添加到返回值
+        ctx.add_return("relation_data", relation_info)
         
         # 继续处理评价值调整逻辑
         matches = self.pattern.findall(event.response_text)
@@ -128,7 +125,6 @@ class RelationManager(BasePlugin):
 
             # 更新回复内容，确保显示最新评价值
             ctx.event.response_text = (
-                f"{relation_info}\n"
                 f"{cleaned_response.strip()}\n"
                 f"[系统提示] 评价值已更新，当前为 {new_evaluation}/100。"
             )
