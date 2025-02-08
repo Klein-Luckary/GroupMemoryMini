@@ -194,7 +194,7 @@ class RelationManager(BasePlugin):
                 modified_message = context_prefix + event.text_message
                 
                 # 通过上下文传递修改后的消息
-                ctx.add("prompt_prefix", context_prefix)  # 存储前缀用于后续处理
+                ctx.add_return("prompt_prefix", context_prefix)  # 存储前缀用于后续处理
                 event.text_message = modified_message
 
                 # 自动保存最新交互时间
