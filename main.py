@@ -70,7 +70,8 @@ class RelationManager(BasePlugin):
             }
         return self.relation_data[user_id]
 
-    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
+    @handler(PersonNormalMessageReceived)
+    @handler(GroupNormalMessageReceived)
     async def add_context_prompt(self, ctx: EventContext):
         """添加对话上下文提示"""
         event = ctx.event
