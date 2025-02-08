@@ -131,7 +131,8 @@ class RelationManager(BasePlugin):
                 # 更新回复内容
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
 
-    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
+    @handler(PersonNormalMessageReceived)
+    @handler(GroupNormalMessageReceived)
     async def handle_query(self, ctx: EventContext):
         """处理查询命令"""
         event = ctx.event
