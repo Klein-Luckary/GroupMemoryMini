@@ -82,20 +82,20 @@ class RelationManager(BasePlugin):
     async def handle_ai_response(self, ctx: EventContext):
         event = ctx.event
         user_id = str(event.sender_id)
-
-        if response_text := event.response_text:
+    
+        if hasattr(event, 'response_text') and event.response_text:
             relation = self.get_relation(user_id)
             prefix_info = (
                 f"当前对话对象切换为 {user_id}，"
                 f"你对他的评价分是 {relation['evaluation']}，"
                 f"他的特殊备注是 {relation['custom_note'] or '无'}。\n"
             )
-            event.response_text = prefix_info + response_text
-
-            matches = self.pattern.findall(response_text)
+            event.response_text = prefix_info + event.response_text
+    
+            matches = self.pattern.findall(event.response_text)
             total_adjustment = 0
-            cleaned_response = response_text
-
+            cleaned_response = event.response_text
+    
             for match in matches:
                 value = match[0] or match[1]
                 try:
@@ -104,7 +104,7 @@ class RelationManager(BasePlugin):
                     cleaned_response = cleaned_response.replace(match[0] or match[1], "", 1)
                 except ValueError:
                     self.ap.logger.warning(f"无效的评价值数值: {value}")
-
+    
             if total_adjustment != 0:
                 relation = self.get_relation(user_id)
                 new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
@@ -119,14 +119,14 @@ class RelationManager(BasePlugin):
                 await self.save_data()
                 self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_evaluation}")
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
-
+                
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
     async def handle_query(self, ctx: EventContext):
         event = ctx.event
         user_id = str(event.sender_id)
         relation = self.get_relation(user_id)
-
+    
         if event.text_message.strip() == "/查看关系":
             report = (
                 f"【关系状态】\n"
@@ -140,17 +140,20 @@ class RelationManager(BasePlugin):
             ctx.event.reply.append(report)
             ctx.prevent_default()
             return
-
+    
+        # 添加前置信息到上下文中
         context_info = (
             f"当前对话对象切换为 {user_id}，"
             f"你对他的评价分是 {relation['evaluation']}，"
             f"他的特殊备注是 {relation['custom_note'] or '无'}。\n"
         )
+        
+        # 将前置信息添加到消息中
         event.text_message = context_info + event.text_message
-
+    
         # 手动触发 AI 的响应处理逻辑
         ctx.event = event  # 确保事件对象更新
         await self.handle_ai_response(ctx)  # 调用 handle_ai_response 方法
-
+        
     def __del__(self):
         pass
