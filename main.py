@@ -12,8 +12,8 @@ from pkg.plugin.events import (
 
 @register(
     name="GroupMemoryMini",
-    description="基于关系管理系统的轻量伪记忆系统",
-    version="0.2",
+    description="基于用户关系管理的伪记忆系统",
+    version="0.7",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -21,43 +21,35 @@ class RelationManager(BasePlugin):
         self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        # 匹配AI回复中的评价值调整标记（支持多种格式）（可修改）
-        self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
+        # 匹配AI回复中的评价值调整标记
+        self.pattern = re.compile(r"\[评价值([+-]?\d+)\]|评价值\s*[：:]\s*([+-]?\d+)")
+        
+        # 上下文提示模板
+        self.context_template = (
+            "[系统记忆] 对话对象：{username} | "
+            "当前评价：{evaluation}/1000 | "
+            "历史互动：{history_count}次 | "
+            "备注：{note}\n\n"
+            "{original_message}"
+        )
 
     async def initialize(self):
         """异步初始化"""
         await self.load_data()
 
     async def load_data(self):
-        """安全加载数据（自动修复损坏文件）"""
+        """安全加载数据"""
         try:
             if self.data_path.exists():
-                # 读取文件内容并验证完整性
-                raw_content = self.data_path.read_text(encoding="utf-8")
-                
-                # 检查空文件
-                if not raw_content.strip():
-                    raise json.JSONDecodeError("Empty file", doc="", pos=0)
-                    
-                # 尝试解析JSON
-                self.relation_data = json.loads(raw_content)
+                with open(self.data_path, "r", encoding="utf-8") as f:
+                    self.relation_data = json.load(f)
                 self.ap.logger.info("关系数据加载成功")
-                
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            # 备份损坏文件
-            corrupt_path = self.data_path.with_name(f"corrupt_{datetime.now().strftime('%Y%m%d%H%M')}_relation_data.json")
-            self.data_path.rename(corrupt_path)
-        
-            # 初始化空数据
-            self.relation_data = {}
-            self.ap.logger.error(f"数据文件损坏，已备份至 {corrupt_path}，初始化新数据")
-            
         except Exception as e:
-            self.ap.logger.error(f"未知加载错误: {str(e)}")
+            self.ap.logger.error(f"数据加载失败: {str(e)}")
             self.relation_data = {}
-    
+
     async def save_data(self):
-        """原子化保存数据"""
+        """原子化保存"""
         try:
             temp_path = self.data_path.with_suffix(".tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
@@ -65,117 +57,97 @@ class RelationManager(BasePlugin):
             temp_path.replace(self.data_path)
         except Exception as e:
             self.ap.logger.error(f"数据保存失败: {str(e)}")
-            
-    def get_relation(self, user_id: str) -> dict:
-        """获取用户数据（带自动修复）"""
-        try:
-            data = self.relation_data.get(user_id, {})
-            
-            # 数据完整性检查
-            required_keys = {"evaluation", "history", "last_interaction", "custom_note"}
-            if not required_keys.issubset(data.keys()):
-                raise KeyError("Missing required keys")
-            
-            # 类型校验
-            if not isinstance(data["evaluation"], int):
-                data["evaluation"] = int(data["evaluation"])
-            
-            # 数值范围限制
-            data["evaluation"] = max(0, min(100, data["evaluation"]))
-        
-            # 时间格式修复
-            if "T" not in data["last_interaction"]:
-                data["last_interaction"] = datetime.now().isoformat()
-            
-            # 更新数据结构
-            self.relation_data[user_id] = data
-            return data
-        
-        except Exception as e:
-            self.ap.logger.warning(f"用户 {user_id} 数据损坏，已重置: {str(e)}")
-            self.relation_data[user_id] = self._init_user_data()
-            return self.relation_data[user_id]
 
-    def _init_user_data(self) -> dict:
-        """初始化用户数据结构模板"""
-        return {
-            "evaluation": 50, #初始值可改
-            "history": [],
-            "last_interaction": datetime.now().isoformat(),
-            "custom_note": ""
-        }
-        
-    @handler(NormalMessageResponded)
-    async def handle_ai_response(self, ctx: EventContext):
-        """处理AI的回复消息"""
-        # 获取事件对象属性
+    def get_relation(self, user_id: str) -> dict:
+        """获取或初始化用户关系数据"""
+        if user_id not in self.relation_data:
+            self.relation_data[user_id] = {
+                "evaluation": 300,  # 初始评价值
+                "history": [],
+                "last_interaction": datetime.now().isoformat(),
+                "custom_note": "",
+                "username": f"用户{user_id}"  # 初始用户名
+            }
+        return self.relation_data[user_id]
+
+    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
+    async def add_context_prompt(self, ctx: EventContext):
+        """添加对话上下文提示"""
         event = ctx.event
-        
-        # 获取接收者ID（根据事件模型，sender_id是消息发送者）
         user_id = str(event.sender_id)
         
-        # 解析回复内容
+        # 获取关系数据
+        relation = self.get_relation(user_id)
+        
+        # 构造上下文提示
+        context_prompt = self.context_template.format(
+            username=relation["username"],
+            evaluation=relation["evaluation"],
+            history_count=len(relation["history"]),
+            note=relation["custom_note"] or "暂无备注",
+            original_message=event.text_message
+        )
+        
+        # 修改原始消息（添加前置提示）
+        event.text_message = context_prompt
+
+    @handler(NormalMessageResponded)
+    async def handle_ai_response(self, ctx: EventContext):
+        """处理AI回复"""
+        event = ctx.event
+        user_id = str(event.sender_id)
+        
         if response_text := event.response_text:
-            # 匹配所有调整指令
+            # 匹配评价值调整指令
             matches = self.pattern.findall(response_text)
-            
             total_adjustment = 0
             cleaned_response = response_text
             
             for match in matches:
-                # 合并两个捕获组的匹配结果
                 value = match[0] or match[1]
-                
                 try:
                     adjustment = int(value)
                     total_adjustment += adjustment
-                    # 从回复内容中移除标记
                     cleaned_response = cleaned_response.replace(match[0] or match[1], "", 1)
                 except ValueError:
-                    self.ap.logger.warning(f"无效的评价值数值: {value}")
+                    self.ap.logger.warning(f"无效的评价值: {value}")
 
             if total_adjustment != 0:
-                # 更新用户数据
                 relation = self.get_relation(user_id)
-                new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
-                actual_adjustment = new_evaluation - relation["evaluation"]
+                new_eval = max(0, min(1000, relation["evaluation"] + total_adjustment))
+                actual_adj = new_eval - relation["evaluation"]
                 
-                relation["evaluation"] = new_evaluation
+                relation["evaluation"] = new_eval
                 relation["history"].append({
                     "timestamp": datetime.now().isoformat(),
-                    "adjustment": actual_adjustment,
+                    "adjustment": actual_adj,
                     "reason": "AI自动调整"
                 })
                 relation["last_interaction"] = datetime.now().isoformat()
                 
                 await self.save_data()
-                self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_evaluation}")
+                self.ap.logger.info(f"用户 {user_id} 评价变更: {actual_adj}")
 
                 # 更新回复内容
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
 
-    @handler(PersonNormalMessageReceived)
-    @handler(GroupNormalMessageReceived)
+    @handler(GroupNormalMessageReceived, PersonNormalMessageReceived)
     async def handle_query(self, ctx: EventContext):
-        """处理查询请求"""
+        """处理查询命令"""
         event = ctx.event
-        
-        if event.text_message.strip() == "/查看关系":
+        if event.text_message.strip() == "/查询评价":
             user_id = str(event.sender_id)
             relation = self.get_relation(user_id)
             
             report = (
-                f"【关系状态】\n"
-                f"• 当前评价值：{relation['evaluation']}/100\n"
-                f"• 历史调整：{len(relation['history'])}次\n"
+                f"【用户评价】\n"
+                f"• 用户：{relation['username']}\n"
+                f"• 当前评价：{relation['evaluation']}/1000\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
-                f"• 特别备注：{relation['custom_note'] or '暂无'}"
+                f"• 特别备注：{relation['custom_note'] or '无'}"
             )
             
-            # 设置回复内容
-            if ctx.event.reply is None:
-                ctx.event.reply = []
-            ctx.event.reply.append(report)
+            ctx.add_return("reply", [report])
             ctx.prevent_default()
 
     def __del__(self):
