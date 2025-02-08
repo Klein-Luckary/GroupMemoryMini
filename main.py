@@ -186,7 +186,7 @@ class RelationManager(BasePlugin):
             
             # 设置回复内容
            if ctx.event.reply is None:
-            ctx.event.reply = []
+               ctx.event.reply = []
         ctx.event.reply.append(report)
         ctx.prevent_default()
 
