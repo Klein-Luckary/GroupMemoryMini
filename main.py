@@ -163,17 +163,6 @@ class RelationManager(BasePlugin):
     
         # 获取用户关系信息
         relation = self.get_relation(user_id)
-    
-            # 构建上下文信息
-        context_info = (
-            f"当前对话对象切换为 {user_id}，"
-            f"你对他的评价分是 {relation['evaluation']}，"
-            f"他的特殊备注是 {relation['custom_note'] or '无'}。\n"
-        )
-
-        # 将上下文信息添加到事件的文本消息中
-        event.text_message = context_info + event.text_message
-    
         # 处理特定命令
         if event.text_message.strip() == "/查看关系":
             report = (
@@ -183,6 +172,18 @@ class RelationManager(BasePlugin):
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
             )
+    
+        # 构建上下文信息
+        context_info = (
+            f"当前对话对象切换为 {user_id}，"
+            f"你对他的评价分是 {relation['evaluation']}，"
+            f"他的特殊备注是 {relation['custom_note'] or '无'}。\n"
+        )
+
+        # 将上下文信息添加到事件的文本消息中
+        event.text_message = context_info + event.text_message
+    
+
         
             # 设置回复内容
             if ctx.event.reply is None:
