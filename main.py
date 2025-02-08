@@ -179,14 +179,6 @@ class RelationManager(BasePlugin):
             ctx.event.reply.append(report)
             ctx.prevent_default()
 
-        @handler(GroupNormalMessageReceived)
-    async def update_group_sender_cache(self, ctx: EventContext):
-        """更新群组最后发送者缓存"""
-        event = ctx.event
-        group_id = str(event.launcher_id)
-        sender_id = str(event.sender_id)
-        self.group_last_sender[group_id] = sender_id  # 记录该群组最后发言的用户
-
     @handler(PromptPreProcessing)
     async def inject_relation_context(self, ctx: EventContext):
         """在Prompt中注入关系数据"""
