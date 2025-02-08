@@ -4,6 +4,9 @@ from pathlib import Path
 from datetime import datetime
 from pydantic import BaseModel
 from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventContext
+from pkg.plugin.events import PromptPreProcessing  # 新增导入
+from typing import List
+import llm.entities as llm_entities  # 新增导入
 from pkg.plugin.events import (
     GroupNormalMessageReceived,
     PersonNormalMessageReceived,
@@ -153,6 +156,37 @@ class RelationManager(BasePlugin):
 
                 # 更新回复内容
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
+                
+    @handler(PromptPreProcessing)
+    async def handle_prompt_preprocessing(self, ctx: EventContext):
+        """在Prompt预处理阶段注入关系数据"""
+        try:
+            session = ctx.event.session
+            if not session:
+                return
+
+            # 获取用户ID（适配私聊/群聊场景）
+            user_id = str(session.sender_id)
+            
+            # 获取关系数据
+            relation = self.get_relation(user_id)
+            
+            # 格式化记忆信息
+            memory_prompt = self._format_memory_prompt(user_id, relation)
+            
+            # 创建系统消息
+            system_msg = llm_entities.Message(
+                role="system",
+                content=memory_prompt
+            )
+            
+            # 插入到prompt最前部（保留原始提示完整性）
+            ctx.event.prompt.insert(0, system_msg)
+            
+            self.ap.logger.debug(f"已为 {user_id} 注入记忆提示: {memory_prompt}")
+            
+        except Exception as e:
+            self.ap.logger.error(f"记忆注入失败: {str(e)}")
 
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
