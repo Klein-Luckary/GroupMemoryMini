@@ -82,12 +82,23 @@ class RelationManager(BasePlugin):
         event = ctx.event
         user_id = str(event.sender_id)
         
-        self.ap.logger.info(f"NormalMessageResponded - Sender ID: {user_id}")
+        # 获取用户关系数据
+        relation = self.get_relation(user_id)
         
-        if not hasattr(event, 'response_text') or not event.response_text:
-            return
-
-        # 提取评价值调整
+        # 构造关系信息
+        relation_info = (
+            f"当前对话对象: {user_id}\n"
+            f"- 评价分: {relation['evaluation']}/100\n"
+            f"- 特殊备注: {relation['custom_note'] or '无'}\n"
+        )
+        
+        # 将关系信息注入到回复消息中
+        if hasattr(event, 'response_text') and event.response_text:
+            ctx.event.response_text = f"{relation_info}\n{event.response_text}"
+        else:
+            ctx.event.response_text = relation_info
+        
+        # 继续处理评价值调整逻辑
         matches = self.pattern.findall(event.response_text)
         total_adjustment = 0
         cleaned_response = event.response_text
@@ -103,7 +114,6 @@ class RelationManager(BasePlugin):
 
         # 更新评价值
         if total_adjustment != 0:
-            relation = self.get_relation(user_id)
             new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
             actual_adjustment = new_evaluation - relation["evaluation"]
             relation["evaluation"] = new_evaluation
@@ -118,6 +128,7 @@ class RelationManager(BasePlugin):
 
             # 更新回复内容，确保显示最新评价值
             ctx.event.response_text = (
+                f"{relation_info}\n"
                 f"{cleaned_response.strip()}\n"
                 f"[系统提示] 评价值已更新，当前为 {new_evaluation}/100。"
             )
@@ -127,10 +138,6 @@ class RelationManager(BasePlugin):
     async def handle_query(self, ctx: EventContext):
         event = ctx.event
         user_id = str(event.sender_id)
-
-        # 调试日志：确认 sender_id 是否正确
-        self.ap.logger.info(f"MessageReceived - Sender ID: {user_id}")
-    
         relation = self.get_relation(user_id)
 
         if event.text_message.strip() == "/查看关系":
@@ -153,8 +160,6 @@ class RelationManager(BasePlugin):
             "evaluation": relation['evaluation'],
             "custom_note": relation['custom_note'] or '无'
         })
-
-        self.ap.logger.info(f"Return values: {ctx.__return_value__}")
 
     def __del__(self):
         pass
