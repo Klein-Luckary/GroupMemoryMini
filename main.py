@@ -149,9 +149,9 @@ class RelationManager(BasePlugin):
 
         # 将关系数据注入到 AI 的上下文中
         ctx.add_return("relation_data", {
-            f"[系统记忆] 当前对话对象: {user_id}\n"
-            f"- 评价分: {relation['evaluation']}/100\n"
-            f"- 特殊备注: {relation['custom_note'] or '无'}\n"
+            "user_id": user_id,
+            "evaluation": relation['evaluation'],
+            "custom_note": relation['custom_note'] or '无'
         })
 
         self.ap.logger.info(f"Return values: {ctx.__return_value__}")
