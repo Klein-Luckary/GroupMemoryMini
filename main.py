@@ -148,5 +148,9 @@ class RelationManager(BasePlugin):
         )
         event.text_message = context_info + event.text_message
 
+        # 手动触发 AI 的响应处理逻辑
+        ctx.event = event  # 确保事件对象更新
+        await self.handle_ai_response(ctx)  # 调用 handle_ai_response 方法
+
     def __del__(self):
         pass
