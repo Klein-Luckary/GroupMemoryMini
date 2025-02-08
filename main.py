@@ -18,11 +18,11 @@ from pkg.plugin.events import (
 )
 class RelationManager(BasePlugin):
     def __init__(self, host: APIHost):
-        super().__init__(host)  # 显式调用父类初始化
+        self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
+        # 匹配AI回复中的评价值调整标记（支持多种格式）（可修改）
         self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
-        self.context_prefix_enabled = True  # 新增开关控制前缀功能
 
     async def initialize(self):
         """异步初始化"""
@@ -81,7 +81,7 @@ class RelationManager(BasePlugin):
                 data["evaluation"] = int(data["evaluation"])
             
             # 数值范围限制
-            data["evaluation"] = max(0, min(1000, data["evaluation"]))
+            data["evaluation"] = max(0, min(100, data["evaluation"]))
         
             # 时间格式修复
             if "T" not in data["last_interaction"]:
@@ -99,7 +99,7 @@ class RelationManager(BasePlugin):
     def _init_user_data(self) -> dict:
         """初始化用户数据结构模板"""
         return {
-            "evaluation": 200, #初始值可改
+            "evaluation": 50, #初始值可改
             "history": [],
             "last_interaction": datetime.now().isoformat(),
             "custom_note": ""
@@ -137,7 +137,7 @@ class RelationManager(BasePlugin):
             if total_adjustment != 0:
                 # 更新用户数据
                 relation = self.get_relation(user_id)
-                new_evaluation = max(0, min(1000, relation["evaluation"] + total_adjustment))
+                new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
                 actual_adjustment = new_evaluation - relation["evaluation"]
                 
                 relation["evaluation"] = new_evaluation
@@ -159,7 +159,6 @@ class RelationManager(BasePlugin):
     async def handle_query(self, ctx: EventContext):
         """处理查询请求"""
         event = ctx.event
-        user_id = str(event.sender_id)
         
         if event.text_message.strip() == "/查看关系":
             user_id = str(event.sender_id)
@@ -167,7 +166,7 @@ class RelationManager(BasePlugin):
             
             report = (
                 f"【关系状态】\n"
-                f"• 当前评价值：{relation['evaluation']}/1000\n"
+                f"• 当前评价值：{relation['evaluation']}/100\n"
                 f"• 历史调整：{len(relation['history'])}次\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
@@ -178,29 +177,30 @@ class RelationManager(BasePlugin):
                 ctx.event.reply = []
             ctx.event.reply.append(report)
             ctx.prevent_default()
-        else:
-            if self.context_prefix_enabled:
-                # 获取关系数据并构建上下文提示
-                relation = self.get_relation(user_id)
-                
-                # 生成自然语言格式的前缀
-                context_prefix = (
-                    f"[系统提示：你正在与{user_id}对话，"
-                    f"当前关系评分：{relation['evaluation']}/1000，"
-                    f"特别备注：{relation['custom_note'] or '无'}]\n"
-                )
-                
-                # 在原始消息前添加上下文（不影响原始消息存储）
-                modified_message = context_prefix + event.text_message
-                
-                # 通过上下文传递修改后的消息
-                ctx.add_return("prompt_prefix", context_prefix)  # 存储前缀用于后续处理
-                event.text_message = modified_message
 
-                # 自动保存最新交互时间
-                relation["last_interaction"] = datetime.now().isoformat()
-                await self.save_data()
-    
+    def __del__(self):
+        pass
+
+    @handler(PersonNormalMessageReceived)
+    @handler(GroupNormalMessageReceived)
+    async def handle_message_received(self, ctx: EventContext):
+        """处理接收到的消息，并添加前置信息"""
+        event = ctx.event
+        user_id = str(event.sender_id)
+        relation = self.get_relation(user_id)
+
+        # 添加前置信息
+        prefix = (
+            f"当前对话对象切换为 {user_id}, "
+            f"你对他的评价分是 {relation['evaluation']}, "
+            f"他的特殊备注是 {relation['custom_note'] or '暂无'}\n"
+        )
+
+        # 将前置信息添加到消息内容中
+        event.text_message = prefix + event.text_message
+
+        # 继续处理消息
+        await self.handle_query(ctx)
 
     def __del__(self):
         pass
