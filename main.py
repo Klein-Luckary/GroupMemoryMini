@@ -154,5 +154,7 @@ class RelationManager(BasePlugin):
             "custom_note": relation['custom_note'] or '无'
         })
 
+        self.ap.logger.info(f"Return values: {ctx.__return_value__}")
+
     def __del__(self):
         pass
