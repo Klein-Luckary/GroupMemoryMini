@@ -21,7 +21,6 @@ class RelationManager(BasePlugin):
         self.host = host
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
-        self.group_last_sender = {}
         # 匹配AI回复中的评价值调整标记（支持多种格式）（可修改）
         self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
 
@@ -178,43 +177,6 @@ class RelationManager(BasePlugin):
                 ctx.event.reply = []
             ctx.event.reply.append(report)
             ctx.prevent_default()
-
-    @handler(PromptPreProcessing)
-    async def inject_relation_context(self, ctx: EventContext):
-        """在Prompt中注入关系数据"""
-        event = ctx.event
-        session = event.session
-
-        # 获取当前会话的发起信息
-        launcher_type = session.launcher_type
-        launcher_id = str(session.launcher_id)
-        user_id = None
-
-        # 根据会话类型确定用户ID
-        if launcher_type == "person":
-            user_id = launcher_id
-        elif launcher_type == "group":
-            # 从缓存获取该群组最后发言的用户
-            user_id = self.group_last_sender.get(launcher_id)
-
-        if user_id:
-            # 获取关系数据
-            relation = self.get_relation(user_id)
-            
-            # 构建系统提示信息
-            system_prompt = (
-                f"[关系上下文] 当前对话对象：用户{user_id} | "
-                f"好感度：{relation['evaluation']}/100 | "
-                f"备注：{relation['custom_note'] or '无'}\n"
-                "----------------"
-            )
-            
-            # 插入到prompt最前端（确保AI最先看到）
-            event.prompt.insert(0, llm_entities.Message(
-                role="system",
-                content=system_prompt
-            ))
-    
 
     def __del__(self):
         pass
