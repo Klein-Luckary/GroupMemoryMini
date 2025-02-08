@@ -137,7 +137,7 @@ class RelationManager(BasePlugin):
     async def handle_query(self, ctx: EventContext):
         """处理查询命令"""
         event = ctx.event
-        if event.text_message.strip() == "/查询评价":
+        if event.text_message.strip() == "/查询关系":
             user_id = str(event.sender_id)
             relation = self.get_relation(user_id)
             
