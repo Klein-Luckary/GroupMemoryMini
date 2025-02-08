@@ -105,13 +105,12 @@ class RelationManager(BasePlugin):
             "custom_note": ""
         }
         
-    # 处理AI的回复消息
     @handler(NormalMessageResponded)
-        async def handle_ai_response(self, ctx: EventContext):
+    async def handle_ai_response(self, ctx: EventContext):
         """处理AI的回复消息"""
         # 获取事件对象属性
         event = ctx.event
-    
+        
         # 获取接收者ID（根据事件模型，sender_id是消息发送者）
         user_id = str(event.sender_id)
         
@@ -122,7 +121,7 @@ class RelationManager(BasePlugin):
             
             total_adjustment = 0
             cleaned_response = response_text
-        
+            
             for match in matches:
                 # 合并两个捕获组的匹配结果
                 value = match[0] or match[1]
@@ -154,27 +153,17 @@ class RelationManager(BasePlugin):
 
                 # 更新回复内容
                 ctx.event.response_text = cleaned_response.strip() or "[评价值已更新]"
-    
+
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
     async def handle_query(self, ctx: EventContext):
         """处理查询请求"""
         event = ctx.event
-        user_id = str(event.sender_id)
-        relation = self.get_relation(user_id)
         
-        # 在消息中插入关系信息，这些信息不会被发送给用户
-        relation_info = (
-            f"当前对话对象切换为 {user_id}, "
-            f"你对他的评价分是 {relation['evaluation']}, "
-            f"他的特殊备注是 {relation['custom_note']}"
-        )
-    
-        # 将关系信息添加到事件属性中，但不发送给用户
-        event.alter = f"{relation_info}\n{event.text_message}"
-        
-        # 检查是否是关系查询命令
         if event.text_message.strip() == "/查看关系":
+            user_id = str(event.sender_id)
+            relation = self.get_relation(user_id)
+            
             report = (
                 f"【关系状态】\n"
                 f"• 当前评价值：{relation['evaluation']}/100\n"
@@ -182,12 +171,12 @@ class RelationManager(BasePlugin):
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
             )
-        
-        # 设置回复内容
-        if ctx.event.reply is None:
-            ctx.event.reply = []
-        ctx.event.reply.append(report)
-        ctx.prevent_default()
-        
+            
+            # 设置回复内容
+            if ctx.event.reply is None:
+                ctx.event.reply = []
+            ctx.event.reply.append(report)
+            ctx.prevent_default()
+
     def __del__(self):
         pass
