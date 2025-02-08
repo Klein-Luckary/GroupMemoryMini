@@ -82,6 +82,8 @@ class RelationManager(BasePlugin):
         event = ctx.event
         user_id = str(event.sender_id)
         
+        self.ap.logger.info(f"NormalMessageResponded - Sender ID: {user_id}")
+        
         if not hasattr(event, 'response_text') or not event.response_text:
             return
 
@@ -125,6 +127,10 @@ class RelationManager(BasePlugin):
     async def handle_query(self, ctx: EventContext):
         event = ctx.event
         user_id = str(event.sender_id)
+
+        # 调试日志：确认 sender_id 是否正确
+        self.ap.logger.info(f"MessageReceived - Sender ID: {user_id}")
+    
         relation = self.get_relation(user_id)
 
         if event.text_message.strip() == "/查看关系":
