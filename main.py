@@ -151,21 +151,22 @@ class RelationManager(BasePlugin):
     @handler(PromptPreProcessing)
     async def handle_prompt_preprocessing(self, ctx: EventContext):
         try:
-            # 调试：打印事件结构
-            self.ap.logger.debug(f"PromptPreProcessing event structure: {ctx.event.__dict__}")
+            # 调试：打印事件对象的类型和可用属性
+            self.ap.logger.debug(f"PromptPreProcessing event type: {type(ctx.event)}")
+            self.ap.logger.debug(f"Available attributes: {dir(ctx.event)}")
     
             # 从上下文中获取用户ID
             user_id = None
     
-            # 尝试从会话中获取用户ID
-            if hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
-                user_id = str(ctx.event.session.sender_id)
-                self.ap.logger.debug(f"从 session.sender_id 获取用户ID: {user_id}")
-            
-            # 尝试从事件中直接获取用户ID
-            elif hasattr(ctx.event, 'sender_id'):
+            # 尝试从事件对象中获取用户ID
+            if hasattr(ctx.event, 'sender_id'):
                 user_id = str(ctx.event.sender_id)
                 self.ap.logger.debug(f"从 event.sender_id 获取用户ID: {user_id}")
+            
+            # 尝试从会话中获取用户ID
+            elif hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
+                user_id = str(ctx.event.session.sender_id)
+                self.ap.logger.debug(f"从 session.sender_id 获取用户ID: {user_id}")
             
             # 尝试从消息链中解析用户ID
             elif hasattr(ctx.event, 'message_chain'):
