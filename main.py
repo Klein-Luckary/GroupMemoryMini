@@ -153,17 +153,30 @@ class RelationManager(BasePlugin):
         try:
             # 从上下文中获取用户ID
             user_id = None
+            
+            # 尝试从会话中获取用户ID
             if hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
                 user_id = str(ctx.event.session.sender_id)
+            # 尝试从事件中直接获取用户ID
             elif hasattr(ctx.event, 'sender_id'):
                 user_id = str(ctx.event.sender_id)
+            # 如果以上方式都无法获取，尝试从消息链中解析
+            else:
+                # 假设消息链中包含用户信息
+                if hasattr(ctx.event, 'message_chain'):
+                    for message in ctx.event.message_chain:
+                        if hasattr(message, 'sender_id'):
+                            user_id = str(message.sender_id)
+                            break
             
             if not user_id:
                 self.ap.logger.warning("无法获取用户ID，跳过提示预处理")
                 return
-
+    
+            # 获取用户关系数据
             relation = self.get_relation(user_id)
             
+            # 构造系统提示信息
             system_prompt = (
                 f"当前对话用户：{user_id}\n"
                 f"综合评分：{relation['evaluation']}/100\n"
@@ -172,6 +185,7 @@ class RelationManager(BasePlugin):
                 f"最后互动时间：{relation['last_interaction'][:19]}"
             )
             
+            # 插入到prompt最前面
             ctx.event.default_prompt.insert(
                 0,
                 llm_entities.Message(role="system", content=system_prompt)
