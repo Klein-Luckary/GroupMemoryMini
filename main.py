@@ -151,28 +151,44 @@ class RelationManager(BasePlugin):
     @handler(PromptPreProcessing)
     async def handle_prompt_preprocessing(self, ctx: EventContext):
         try:
+            # 调试：打印事件结构
+            self.ap.logger.debug(f"PromptPreProcessing event structure: {ctx.event.__dict__}")
+    
             # 从上下文中获取用户ID
             user_id = None
-            
+    
             # 尝试从会话中获取用户ID
             if hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
                 user_id = str(ctx.event.session.sender_id)
+                self.ap.logger.debug(f"从 session.sender_id 获取用户ID: {user_id}")
+            
             # 尝试从事件中直接获取用户ID
             elif hasattr(ctx.event, 'sender_id'):
                 user_id = str(ctx.event.sender_id)
-            # 如果以上方式都无法获取，尝试从消息链中解析
-            else:
-                # 假设消息链中包含用户信息
-                if hasattr(ctx.event, 'message_chain'):
-                    for message in ctx.event.message_chain:
-                        if hasattr(message, 'sender_id'):
-                            user_id = str(message.sender_id)
-                            break
+                self.ap.logger.debug(f"从 event.sender_id 获取用户ID: {user_id}")
             
+            # 尝试从消息链中解析用户ID
+            elif hasattr(ctx.event, 'message_chain'):
+                for message in ctx.event.message_chain:
+                    if hasattr(message, 'sender_id'):
+                        user_id = str(message.sender_id)
+                        self.ap.logger.debug(f"从 message_chain 获取用户ID: {user_id}")
+                        break
+            
+            # 如果以上方式都无法获取，尝试从默认提示中解析
+            if not user_id and hasattr(ctx.event, 'default_prompt'):
+                for prompt in ctx.event.default_prompt:
+                    if hasattr(prompt, 'content'):
+                        # 假设提示内容中包含用户ID
+                        match = re.search(r"用户ID[:：](\d+)", prompt.content)
+                        if match:
+                            user_id = match.group(1)
+                            self.ap.logger.debug(f"从 default_prompt 解析用户ID: {user_id}")
+                            break
+    
             if not user_id:
                 self.ap.logger.warning("无法获取用户ID，跳过提示预处理")
                 return
-            self.ap.logger.debug(f"PromptPreProcessing event structure: {ctx.event.__dict__}")
     
             # 获取用户关系数据
             relation = self.get_relation(user_id)
