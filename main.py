@@ -6,13 +6,15 @@ from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventCont
 from pkg.plugin.events import (
     GroupNormalMessageReceived,
     PersonNormalMessageReceived,
-    NormalMessageResponded
+    NormalMessageResponded,
+    PromptPreProcessing
 )
+from pkg.plugin.models import llm_entities
 
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="0.3",
+    version="0.4",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -54,7 +56,7 @@ class RelationManager(BasePlugin):
     def get_relation(self, user_id: str) -> dict:
         try:
             data = self.relation_data.get(user_id, {})
-            required_keys = {"evaluation", "history", "last_interaction", "custom_note"}
+            required_keys = {"evaluation", "history", "last_interaction", "custom_note", "interaction_count"}
             if not required_keys.issubset(data.keys()):
                 raise KeyError("Missing required keys")
             if not isinstance(data["evaluation"], int):
@@ -74,7 +76,8 @@ class RelationManager(BasePlugin):
             "evaluation": 50,
             "history": [],
             "last_interaction": datetime.now().isoformat(),
-            "custom_note": ""
+            "custom_note": "",
+            "interaction_count": 0
         }
 
     @handler(NormalMessageResponded)
@@ -82,20 +85,11 @@ class RelationManager(BasePlugin):
         event = ctx.event
         user_id = str(event.sender_id)
         
-        # 获取用户关系数据
-        relation = self.get_relation(user_id)
+        self.ap.logger.info(f"NormalMessageResponded - Sender ID: {user_id}")
         
-        # 构造关系信息
-        relation_info = (
-            f"当前对话对象: {user_id}\n"
-            f"- 评价分: {relation['evaluation']}/100\n"
-            f"- 特殊备注: {relation['custom_note'] or '无'}\n"
-        )
-        
-        # 将关系信息添加到返回值
-        ctx.add_return("relation_data", relation_info)
-        
-        # 继续处理评价值调整逻辑
+        if not hasattr(event, 'response_text') or not event.response_text:
+            return
+
         matches = self.pattern.findall(event.response_text)
         total_adjustment = 0
         cleaned_response = event.response_text
@@ -109,8 +103,8 @@ class RelationManager(BasePlugin):
             except ValueError:
                 self.ap.logger.warning(f"无效的评价值数值: {value}")
 
-        # 更新评价值
         if total_adjustment != 0:
+            relation = self.get_relation(user_id)
             new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
             actual_adjustment = new_evaluation - relation["evaluation"]
             relation["evaluation"] = new_evaluation
@@ -123,7 +117,6 @@ class RelationManager(BasePlugin):
             await self.save_data()
             self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_evaluation}")
 
-            # 更新回复内容，确保显示最新评价值
             ctx.event.response_text = (
                 f"{cleaned_response.strip()}\n"
                 f"[系统提示] 评价值已更新，当前为 {new_evaluation}/100。"
@@ -134,13 +127,18 @@ class RelationManager(BasePlugin):
     async def handle_query(self, ctx: EventContext):
         event = ctx.event
         user_id = str(event.sender_id)
+
         relation = self.get_relation(user_id)
+        relation['interaction_count'] = relation.get('interaction_count', 0) + 1
+        relation['last_interaction'] = datetime.now().isoformat()
+        await self.save_data()
 
         if event.text_message.strip() == "/查看关系":
             report = (
                 f"【关系状态】\n"
                 f"• 当前评价值：{relation['evaluation']}/100\n"
                 f"• 历史调整：{len(relation['history'])}次\n"
+                f"• 互动次数：{relation['interaction_count']}次\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
             )
@@ -150,12 +148,30 @@ class RelationManager(BasePlugin):
             ctx.prevent_default()
             return
 
-        # 将关系数据注入到 AI 的上下文中
-        ctx.add_return("relation_data", {
-            "user_id": user_id,
-            "evaluation": relation['evaluation'],
-            "custom_note": relation['custom_note'] or '无'
-        })
+    @handler(PromptPreProcessing)
+    async def handle_prompt_preprocessing(self, ctx: EventContext):
+        try:
+            session = ctx.event.session
+            user_id = str(session.sender_id)
+            
+            relation = self.get_relation(user_id)
+            
+            system_prompt = (
+                f"当前对话用户：{user_id}\n"
+                f"综合评分：{relation['evaluation']}/100\n"
+                f"特殊标签：{relation['custom_note'] or '无'}\n"
+                f"历史互动次数：{relation['interaction_count']}次\n"
+                f"最后互动时间：{relation['last_interaction'][:19]}"
+            )
+            
+            ctx.event.default_prompt.insert(
+                0,
+                llm_entities.Message(role="system", content=system_prompt)
+            )
+            
+            self.ap.logger.debug(f"已插入用户关系提示：{system_prompt}")
+        except Exception as e:
+            self.ap.logger.error(f"提示预处理失败：{str(e)}")
 
     def __del__(self):
         pass
