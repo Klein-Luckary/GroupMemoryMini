@@ -87,7 +87,7 @@ class RelationManager(BasePlugin):
             if ctx.event.text_message.startswith("/修改用户"):
                 await self.handle_modify_evaluation(ctx)
                 return
-            elif ctx.event.text_message.startswith("/增加标签"):
+            elif ctx.event.text_message.startswith("/添加标签"):
                 await self.handle_add_tag(ctx)
                 return
             elif ctx.event.text_message.startswith("/删除标签"):
