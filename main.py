@@ -1,4 +1,3 @@
-# plugins/GroupMemoryMini/__init__.py
 import json
 import re
 from pathlib import Path
@@ -13,8 +12,8 @@ from pkg.plugin.events import (
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="0.7",
-    author="KL"
+    version="1.0",  # 更新版本号
+    author="Klein_Luckary"
 )
 class RelationManager(BasePlugin):
     def __init__(self, host: APIHost):
@@ -22,6 +21,9 @@ class RelationManager(BasePlugin):
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
         self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
+        
+        # 默认管理员列表
+        self.admin_users = ["123456789"]  # 替换为实际的管理员用户ID
 
     async def initialize(self):
         """插件初始化时加载数据"""
@@ -32,7 +34,14 @@ class RelationManager(BasePlugin):
         try:
             if self.data_path.exists():
                 with open(self.data_path, 'r', encoding='utf-8') as f:
-                    self.relation_data = json.load(f)
+                    content = f.read().strip()
+                    if not content:
+                        self.relation_data = {}
+                    else:
+                        self.relation_data = json.loads(content)
+        except json.JSONDecodeError as e:
+            self.ap.logger.error(f"JSON 解析失败: {str(e)}")
+            self.relation_data = {}
         except Exception as e:
             self.ap.logger.error(f"加载数据失败: {str(e)}")
             self.relation_data = {}
@@ -40,8 +49,10 @@ class RelationManager(BasePlugin):
     async def save_data(self):
         """保存用户关系数据"""
         try:
-            with open(self.data_path, 'w', encoding='utf-8') as f:
+            temp_path = self.data_path.with_suffix(".tmp")
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
+            temp_path.replace(self.data_path)
         except Exception as e:
             self.ap.logger.error(f"保存数据失败: {str(e)}")
 
@@ -55,6 +66,10 @@ class RelationManager(BasePlugin):
             "interaction_count": 0
         })
 
+    def is_admin(self, user_id: str) -> bool:
+        """检查用户是否为管理员"""
+        return user_id in self.admin_users
+
     @handler(PersonNormalMessageReceived)
     @handler(GroupNormalMessageReceived)
     async def handle_message(self, ctx: EventContext):
@@ -67,6 +82,19 @@ class RelationManager(BasePlugin):
         relation["last_interaction"] = datetime.now().isoformat()
         await self.save_data()
 
+        # 处理管理员指令
+        if self.is_admin(user_id):
+            if ctx.event.text_message.startswith("/修改用户"):
+                await self.handle_modify_evaluation(ctx)
+                return
+            elif ctx.event.text_message.startswith("/增加标签"):
+                await self.handle_add_tag(ctx)
+                return
+            elif ctx.event.text_message.startswith("/删除标签"):
+                await self.handle_remove_tag(ctx)
+                return
+
+        # 普通用户指令
         if ctx.event.text_message.strip() == "/查看关系":
             report = (
                 f"【关系状态】\n"
@@ -78,7 +106,7 @@ class RelationManager(BasePlugin):
             ctx.event.reply = [report]
             ctx.prevent_default()
 
-        # 在消息处理时动态修改默认提示
+        # 动态修改默认提示
         if hasattr(ctx.event, 'alter'):
             relation_prompt = (
                 f"[用户关系档案]\n"
@@ -89,6 +117,74 @@ class RelationManager(BasePlugin):
                 f"最后活跃: {relation['last_interaction'][:19]}"
             )
             ctx.event.alter = f"{relation_prompt}\n\n{ctx.event.alter or ctx.event.text_message}"
+
+    async def handle_modify_evaluation(self, ctx: EventContext):
+        """处理修改评价分指令"""
+        try:
+            parts = ctx.event.text_message.split()
+            target_user = parts[1]
+            new_evaluation = int(parts[3])
+            
+            if not target_user or not new_evaluation:
+                raise ValueError("参数错误")
+            
+            relation = self.get_relation(target_user)
+            old_evaluation = relation["evaluation"]
+            relation["evaluation"] = max(0, min(1000, new_evaluation))
+            relation["history"].append({
+                "timestamp": datetime.now().isoformat(),
+                "adjustment": new_evaluation - old_evaluation,
+                "reason": "管理员手动调整"
+            })
+            await self.save_data()
+            
+            ctx.event.reply = [f"用户 {target_user} 的评价分已从 {old_evaluation} 修改为 {new_evaluation}。"]
+            ctx.prevent_default()
+        except Exception as e:
+            ctx.event.reply = [f"修改评价分失败: {str(e)}"]
+            ctx.prevent_default()
+
+    async def handle_add_tag(self, ctx: EventContext):
+        """处理增加标签指令"""
+        try:
+            parts = ctx.event.text_message.split()
+            target_user = parts[1]
+            tag = parts[2]
+            
+            if not target_user or not tag:
+                raise ValueError("参数错误")
+            
+            relation = self.get_relation(target_user)
+            if "custom_note" not in relation:
+                relation["custom_note"] = ""
+            relation["custom_note"] = tag
+            await self.save_data()
+            
+            ctx.event.reply = [f"已为用户 {target_user} 添加标签: {tag}。"]
+            ctx.prevent_default()
+        except Exception as e:
+            ctx.event.reply = [f"增加标签失败: {str(e)}"]
+            ctx.prevent_default()
+
+    async def handle_remove_tag(self, ctx: EventContext):
+        """处理删除标签指令"""
+        try:
+            parts = ctx.event.text_message.split()
+            target_user = parts[1]
+            
+            if not target_user:
+                raise ValueError("参数错误")
+            
+            relation = self.get_relation(target_user)
+            if "custom_note" in relation:
+                relation["custom_note"] = ""
+            await self.save_data()
+            
+            ctx.event.reply = [f"已移除用户 {target_user} 的标签。"]
+            ctx.prevent_default()
+        except Exception as e:
+            ctx.event.reply = [f"删除标签失败: {str(e)}"]
+            ctx.prevent_default()
 
     @handler(NormalMessageResponded)
     async def handle_response(self, ctx: EventContext):
@@ -131,7 +227,7 @@ class RelationManager(BasePlugin):
             # 更新回复内容
             ctx.event.response_text = (
                 f"{cleaned_response.strip()}\n"
-                f"[系统提示] 评价值已更新，当前为 {new_evaluation}/100。"
+                f"[系统提示] 评价值已更新，当前为 {new_evaluation}/1000。"
             )
             
     def __del__(self):
