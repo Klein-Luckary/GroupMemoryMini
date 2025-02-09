@@ -1,3 +1,4 @@
+# plugins/GroupMemoryMini/__init__.py
 import json
 import re
 from pathlib import Path
@@ -12,18 +13,18 @@ from pkg.plugin.events import (
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="1.0",
+    version="2.0",
     author="KL"
 )
 class RelationManager(BasePlugin):
     def __init__(self, host: APIHost):
-        self.host = host
+        super().__init__(host)
         self.data_path = Path("plugins/GroupMemoryMini/data/relation_data.json")
         self.relation_data = {}
         self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
 
     async def initialize(self):
-        """初始化时加载用户关系数据"""
+        """插件初始化时加载数据"""
         await self.load_data()
 
     async def load_data(self):
@@ -64,7 +65,6 @@ class RelationManager(BasePlugin):
         # 更新互动数据
         relation["interaction_count"] += 1
         relation["last_interaction"] = datetime.now().isoformat()
-        
         await self.save_data()
 
         if ctx.event.text_message.strip() == "/查看关系":
@@ -77,6 +77,18 @@ class RelationManager(BasePlugin):
             )
             ctx.event.reply = [report]
             ctx.prevent_default()
+
+        # 在消息处理时动态修改默认提示
+        if hasattr(ctx.event, 'alter'):
+            relation_prompt = (
+                f"[用户关系档案]\n"
+                f"用户ID: {user_id}\n"
+                f"综合评分: {relation['evaluation']}/100\n"
+                f"特殊标签: {relation['custom_note'] or '无'}\n"
+                f"历史互动: {relation['interaction_count']}次\n"
+                f"最后活跃: {relation['last_interaction'][:19]}"
+            )
+            ctx.event.alter = f"{relation_prompt}\n\n{ctx.event.alter or ctx.event.text_message}"
 
     @handler(NormalMessageResponded)
     async def handle_response(self, ctx: EventContext):
