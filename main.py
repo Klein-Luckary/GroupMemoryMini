@@ -172,6 +172,7 @@ class RelationManager(BasePlugin):
             if not user_id:
                 self.ap.logger.warning("无法获取用户ID，跳过提示预处理")
                 return
+            self.ap.logger.debug(f"PromptPreProcessing event structure: {ctx.event.__dict__}")
     
             # 获取用户关系数据
             relation = self.get_relation(user_id)
