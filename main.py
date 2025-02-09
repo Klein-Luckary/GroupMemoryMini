@@ -6,15 +6,13 @@ from pkg.plugin.context import register, handler, BasePlugin, APIHost, EventCont
 from pkg.plugin.events import (
     GroupNormalMessageReceived,
     PersonNormalMessageReceived,
-    NormalMessageResponded,
-    PromptPreProcessing
+    NormalMessageResponded
 )
-from pkg.plugin.models import llm_entities
 
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="0.5",  # 更新版本号
+    version="1.0",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -28,68 +26,67 @@ class RelationManager(BasePlugin):
         await self.load_data()
 
     async def load_data(self):
+        """加载用户关系数据"""
         try:
             if self.data_path.exists():
-                raw_content = self.data_path.read_text(encoding="utf-8")
-                if not raw_content.strip():
-                    raise json.JSONDecodeError("Empty file", doc="", pos=0)
-                self.relation_data = json.loads(raw_content)
-                self.ap.logger.info("关系数据加载成功")
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            corrupt_path = self.data_path.with_name(f"corrupt_{datetime.now().strftime('%Y%m%d%H%M')}_relation_data.json")
-            self.data_path.rename(corrupt_path)
-            self.relation_data = {}
-            self.ap.logger.error(f"数据文件损坏，已备份至 {corrupt_path}，初始化新数据")
+                with open(self.data_path, 'r', encoding='utf-8') as f:
+                    self.relation_data = json.load(f)
         except Exception as e:
-            self.ap.logger.error(f"未知加载错误: {str(e)}")
+            self.ap.logger.error(f"加载数据失败: {str(e)}")
             self.relation_data = {}
 
     async def save_data(self):
+        """保存用户关系数据"""
         try:
-            temp_path = self.data_path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
+            with open(self.data_path, 'w', encoding='utf-8') as f:
                 json.dump(self.relation_data, f, ensure_ascii=False, indent=2)
-            temp_path.replace(self.data_path)
         except Exception as e:
-            self.ap.logger.error(f"数据保存失败: {str(e)}")
+            self.ap.logger.error(f"保存数据失败: {str(e)}")
 
     def get_relation(self, user_id: str) -> dict:
-        try:
-            data = self.relation_data.get(user_id, {})
-            required_keys = {"evaluation", "history", "last_interaction", "custom_note", "interaction_count"}
-            if not required_keys.issubset(data.keys()):
-                raise KeyError("Missing required keys")
-            if not isinstance(data["evaluation"], int):
-                data["evaluation"] = int(data["evaluation"])
-            data["evaluation"] = max(0, min(100, data["evaluation"]))
-            if "T" not in data["last_interaction"]:
-                data["last_interaction"] = datetime.now().isoformat()
-            self.relation_data[user_id] = data
-            return data
-        except Exception as e:
-            self.ap.logger.warning(f"用户 {user_id} 数据损坏，已重置: {str(e)}")
-            self.relation_data[user_id] = self._init_user_data()
-            return self.relation_data[user_id]
-
-    def _init_user_data(self) -> dict:
-        return {
+        """获取或初始化用户关系数据"""
+        return self.relation_data.setdefault(user_id, {
             "evaluation": 50,
             "history": [],
             "last_interaction": datetime.now().isoformat(),
             "custom_note": "",
             "interaction_count": 0
-        }
+        })
+
+    @handler(PersonNormalMessageReceived)
+    @handler(GroupNormalMessageReceived)
+    async def handle_message(self, ctx: EventContext):
+        """处理用户消息"""
+        user_id = str(ctx.event.sender_id)
+        relation = self.get_relation(user_id)
+        
+        # 更新互动数据
+        relation["interaction_count"] += 1
+        relation["last_interaction"] = datetime.now().isoformat()
+        
+        await self.save_data()
+
+        if ctx.event.text_message.strip() == "/查看关系":
+            report = (
+                f"【关系状态】\n"
+                f"• 当前评分：{relation['evaluation']}/100\n"
+                f"• 互动次数：{relation['interaction_count']}次\n"
+                f"• 最后互动：{relation['last_interaction'][:19]}\n"
+                f"• 特别备注：{relation['custom_note'] or '暂无'}"
+            )
+            ctx.event.reply = [report]
+            ctx.prevent_default()
 
     @handler(NormalMessageResponded)
-    async def handle_ai_response(self, ctx: EventContext):
+    async def handle_response(self, ctx: EventContext):
+        """处理AI回复"""
         event = ctx.event
         user_id = str(event.sender_id)
-        
-        self.ap.logger.info(f"NormalMessageResponded - Sender ID: {user_id}")
         
         if not hasattr(event, 'response_text') or not event.response_text:
             return
 
+        # 提取评价值调整
         matches = self.pattern.findall(event.response_text)
         total_adjustment = 0
         cleaned_response = event.response_text
@@ -103,6 +100,7 @@ class RelationManager(BasePlugin):
             except ValueError:
                 self.ap.logger.warning(f"无效的评价值数值: {value}")
 
+        # 更新评价值
         if total_adjustment != 0:
             relation = self.get_relation(user_id)
             new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
@@ -117,101 +115,11 @@ class RelationManager(BasePlugin):
             await self.save_data()
             self.ap.logger.info(f"用户 {user_id} 评价值变化: {actual_adjustment}, 当前: {new_evaluation}")
 
+            # 更新回复内容
             ctx.event.response_text = (
                 f"{cleaned_response.strip()}\n"
                 f"[系统提示] 评价值已更新，当前为 {new_evaluation}/100。"
             )
-
-    @handler(PersonNormalMessageReceived)
-    @handler(GroupNormalMessageReceived)
-    async def handle_query(self, ctx: EventContext):
-        event = ctx.event
-        user_id = str(event.sender_id)
-
-        relation = self.get_relation(user_id)
-        relation['interaction_count'] = relation.get('interaction_count', 0) + 1
-        relation['last_interaction'] = datetime.now().isoformat()
-        await self.save_data()
-
-        if event.text_message.strip() == "/查看关系":
-            report = (
-                f"【关系状态】\n"
-                f"• 当前评价值：{relation['evaluation']}/100\n"
-                f"• 历史调整：{len(relation['history'])}次\n"
-                f"• 互动次数：{relation['interaction_count']}次\n"
-                f"• 最后互动：{relation['last_interaction'][:19]}\n"
-                f"• 特别备注：{relation['custom_note'] or '暂无'}"
-            )
-            if ctx.event.reply is None:
-                ctx.event.reply = []
-            ctx.event.reply.append(report)
-            ctx.prevent_default()
-            return
-
-    @handler(PromptPreProcessing)
-    async def handle_prompt_preprocessing(self, ctx: EventContext):
-        try:
-            # 调试：打印事件对象的类型和可用属性
-            self.ap.logger.debug(f"PromptPreProcessing event type: {type(ctx.event)}")
-            self.ap.logger.debug(f"Available attributes: {dir(ctx.event)}")
-    
-            # 从上下文中获取用户ID
-            user_id = None
-    
-            # 尝试从事件对象中获取用户ID
-            if hasattr(ctx.event, 'sender_id'):
-                user_id = str(ctx.event.sender_id)
-                self.ap.logger.debug(f"从 event.sender_id 获取用户ID: {user_id}")
             
-            # 尝试从会话中获取用户ID
-            elif hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
-                user_id = str(ctx.event.session.sender_id)
-                self.ap.logger.debug(f"从 session.sender_id 获取用户ID: {user_id}")
-            
-            # 尝试从消息链中解析用户ID
-            elif hasattr(ctx.event, 'message_chain'):
-                for message in ctx.event.message_chain:
-                    if hasattr(message, 'sender_id'):
-                        user_id = str(message.sender_id)
-                        self.ap.logger.debug(f"从 message_chain 获取用户ID: {user_id}")
-                        break
-            
-            # 如果以上方式都无法获取，尝试从默认提示中解析
-            if not user_id and hasattr(ctx.event, 'default_prompt'):
-                for prompt in ctx.event.default_prompt:
-                    if hasattr(prompt, 'content'):
-                        # 假设提示内容中包含用户ID
-                        match = re.search(r"用户ID[:：](\d+)", prompt.content)
-                        if match:
-                            user_id = match.group(1)
-                            self.ap.logger.debug(f"从 default_prompt 解析用户ID: {user_id}")
-                            break
-    
-            if not user_id:
-                self.ap.logger.warning("无法获取用户ID，跳过提示预处理")
-                return
-    
-            # 获取用户关系数据
-            relation = self.get_relation(user_id)
-            
-            # 构造系统提示信息
-            system_prompt = (
-                f"当前对话用户：{user_id}\n"
-                f"综合评分：{relation['evaluation']}/100\n"
-                f"特殊标签：{relation['custom_note'] or '无'}\n"
-                f"历史互动次数：{relation['interaction_count']}次\n"
-                f"最后互动时间：{relation['last_interaction'][:19]}"
-            )
-            
-            # 插入到prompt最前面
-            ctx.event.default_prompt.insert(
-                0,
-                llm_entities.Message(role="system", content=system_prompt)
-            )
-            
-            self.ap.logger.debug(f"已插入用户关系提示：{system_prompt}")
-        except Exception as e:
-            self.ap.logger.error(f"提示预处理失败：{str(e)}")
-
     def __del__(self):
         pass
