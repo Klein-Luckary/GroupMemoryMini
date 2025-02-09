@@ -23,6 +23,7 @@ class RelationManager(BasePlugin):
         self.pattern = re.compile(r"评价值([+-]?\d+)|评价值\s*[：:]\s*([+-]?\d+)")
 
     async def initialize(self):
+        """初始化时加载用户关系数据"""
         await self.load_data()
 
     async def load_data(self):
