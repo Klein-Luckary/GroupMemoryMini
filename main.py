@@ -13,7 +13,7 @@ from pkg.plugin.events import (
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="2.0",
+    version="0.7",
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -48,7 +48,7 @@ class RelationManager(BasePlugin):
     def get_relation(self, user_id: str) -> dict:
         """获取或初始化用户关系数据"""
         return self.relation_data.setdefault(user_id, {
-            "evaluation": 50,
+            "evaluation": 200,
             "history": [],
             "last_interaction": datetime.now().isoformat(),
             "custom_note": "",
@@ -70,7 +70,7 @@ class RelationManager(BasePlugin):
         if ctx.event.text_message.strip() == "/查看关系":
             report = (
                 f"【关系状态】\n"
-                f"• 当前评分：{relation['evaluation']}/100\n"
+                f"• 当前评分：{relation['evaluation']}/1000\n"
                 f"• 互动次数：{relation['interaction_count']}次\n"
                 f"• 最后互动：{relation['last_interaction'][:19]}\n"
                 f"• 特别备注：{relation['custom_note'] or '暂无'}"
@@ -83,7 +83,7 @@ class RelationManager(BasePlugin):
             relation_prompt = (
                 f"[用户关系档案]\n"
                 f"用户ID: {user_id}\n"
-                f"综合评分: {relation['evaluation']}/100\n"
+                f"综合评分: {relation['evaluation']}/1000\n"
                 f"特殊标签: {relation['custom_note'] or '无'}\n"
                 f"历史互动: {relation['interaction_count']}次\n"
                 f"最后活跃: {relation['last_interaction'][:19]}"
@@ -116,7 +116,7 @@ class RelationManager(BasePlugin):
         # 更新评价值
         if total_adjustment != 0:
             relation = self.get_relation(user_id)
-            new_evaluation = max(0, min(100, relation["evaluation"] + total_adjustment))
+            new_evaluation = max(0, min(1000, relation["evaluation"] + total_adjustment))
             actual_adjustment = new_evaluation - relation["evaluation"]
             relation["evaluation"] = new_evaluation
             relation["history"].append({
