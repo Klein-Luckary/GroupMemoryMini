@@ -14,6 +14,7 @@ class RelationPromptLoader(PromptLoader):
         self.relation_data = {}
 
     async def initialize(self):
+        """初始化时加载用户关系数据"""
         await self.load_data()
 
     async def load_data(self):
@@ -27,12 +28,13 @@ class RelationPromptLoader(PromptLoader):
             self.relation_data = {}
 
     async def load(self):
-        """生成用户关系提示"""
+        """生成用户关系提示并插入到系统提示中"""
         try:
             # 获取当前会话上下文
             session = self.ap.provider.current_session
             
             if not session or not session.sender_id:
+                self.ap.logger.warning("无法获取会话或用户ID，跳过提示生成")
                 return
                 
             user_id = str(session.sender_id)
@@ -53,13 +55,18 @@ class RelationPromptLoader(PromptLoader):
                 f"最后活跃: {relation['last_interaction'][:19]}"
             )
 
-            # 插入到prompts列表
-            self.prompts.append(
+            # 插入到prompts列表的最前面
+            self.prompts.insert(
+                0,  # 插入到最前面
                 entities.Prompt(
                     role="system",
                     content=prompt_text,
-                    priority=500  # 优先级低于默认设定
+                    priority=1000  # 最高优先级
                 )
             )
+
+            self.ap.logger.debug(f"已插入用户关系提示: {prompt_text}")
+        except Exception as e:
+            self.ap.logger.error(f"生成关系提示失败: {str(e)}")
         except Exception as e:
             self.ap.logger.error(f"生成关系提示失败: {str(e)}")
