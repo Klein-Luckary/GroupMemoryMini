@@ -14,7 +14,7 @@ from pkg.plugin.models import llm_entities
 @register(
     name="GroupMemoryMini",
     description="基于关系管理系统的轻量伪记忆系统",
-    version="0.4",
+    version="0.5",  # 更新版本号
     author="KL"
 )
 class RelationManager(BasePlugin):
@@ -151,9 +151,17 @@ class RelationManager(BasePlugin):
     @handler(PromptPreProcessing)
     async def handle_prompt_preprocessing(self, ctx: EventContext):
         try:
-            session = ctx.event.session
-            user_id = str(session.sender_id)
+            # 从上下文中获取用户ID
+            user_id = None
+            if hasattr(ctx.event, 'session') and hasattr(ctx.event.session, 'sender_id'):
+                user_id = str(ctx.event.session.sender_id)
+            elif hasattr(ctx.event, 'sender_id'):
+                user_id = str(ctx.event.sender_id)
             
+            if not user_id:
+                self.ap.logger.warning("无法获取用户ID，跳过提示预处理")
+                return
+
             relation = self.get_relation(user_id)
             
             system_prompt = (
